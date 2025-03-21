@@ -1,0 +1,43 @@
+/* Reset styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f5f5;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Utility classes */
+.status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.status-active {
+  background-color: #4caf50;
+}
+
+.status-inactive {
+  background-color: #f44336;
+}
+
+/* Remove any margins that could cause gaps */
+.MuiDrawer-root + .MuiBox-root {
+  margin-left: 0 !important;
+}
+
+/* Ensure content starts at the edge of the sidebar */
+.MuiDrawer-paper + div {
+  padding-left: 0 !important;
+}
