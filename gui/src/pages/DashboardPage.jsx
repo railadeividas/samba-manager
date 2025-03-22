@@ -7,6 +7,7 @@ import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
 import { getShares } from '../services/sharesService';
 import { getUsers } from '../services/usersService';
+import { restartService, getServiceStatus } from '../services/serviceStatus';
 import { useApp } from '../context/AppContext';
 import { useNotification } from '../context/NotificationContext';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -17,7 +18,7 @@ import UsersList from '../components/Dashboard/UsersList';
 const DashboardPage = () => {
   const navigate = useNavigate();
   const { showNotification } = useNotification();
-  const { serviceStatus, shares, setShares, users, setUsers } = useApp();
+  const { serviceStatus, setServiceStatus, shares, setShares, users, setUsers } = useApp();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,6 +42,25 @@ const DashboardPage = () => {
     fetchData();
   }, [setShares, setUsers, showNotification]);
 
+  const handleRestartService = async () => {
+    try {
+      await restartService();
+      showNotification('Service restarted successfully', 'success');
+
+      // Update service status after a delay
+      setTimeout(async () => {
+        try {
+          const status = await getServiceStatus();
+          setServiceStatus(status);
+        } catch (error) {
+          console.error('Failed to get service status:', error);
+        }
+      }, 2000);
+    } catch (error) {
+      showNotification(`Failed to restart service: ${error.message}`, 'error');
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Loading dashboard..." />;
   }
@@ -50,9 +70,36 @@ const DashboardPage = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Dashboard
-      </Typography>
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
+        mb: 2,
+        pb: 1,
+        borderBottom: '1px solid rgba(0, 0, 0, 0.08)'
+      }}>
+        <Typography
+          variant="h4"
+          sx={{
+            fontWeight: 600,
+            background: (theme) =>
+              theme.palette.mode === 'dark'
+                ? 'linear-gradient(45deg, #90caf9 10%, #64b5f6 90%)'
+                : 'linear-gradient(45deg, #2196f3 30%, #1976d2 90%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            mr: 2
+          }}
+        >
+          Dashboard
+        </Typography>
+        <Typography
+          variant="subtitle1"
+          color="text.secondary"
+          sx={{ flexGrow: 1 }}
+        >
+          System Overview
+        </Typography>
+      </Box>
 
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} md={4}>
@@ -62,7 +109,7 @@ const DashboardPage = () => {
             icon="status"
             status={serviceStatus.active}
             actionText="Restart"
-            onAction={() => {/* restart service */}}
+            onAction={handleRestartService}
           />
         </Grid>
         <Grid item xs={12} md={4}>
