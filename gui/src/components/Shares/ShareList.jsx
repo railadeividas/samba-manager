@@ -22,6 +22,8 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import PersonIcon from '@mui/icons-material/Person';
 import EditNoteIcon from '@mui/icons-material/EditNote';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import CommentIcon from '@mui/icons-material/Comment';
 import { deleteShare } from '../../services/sharesService';
 import { useNotification } from '../../context/NotificationContext';
 import ConfirmDialog from '../Common/ConfirmDialog';
@@ -199,19 +201,23 @@ const ShareList = ({ shares, onEdit, onRefresh, loading, sharesSizeData }) => {
                         {/* User Access Line */}
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 0.75 }}>
                           {validUsersList}
+                        </Box>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 0.75 }}>
                           {writeListUsers}
                         </Box>
 
                         {/* Path and Comment Line */}
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
-                          <Typography variant="body2" component="span">
-                            <Typography component="span" variant="body2" color="text.secondary">Path: </Typography>
+                          <Typography variant="body2" component="span" sx={{ display: 'flex', alignItems: 'center' }}>
+                            <FolderOpenIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary' }} />
+                            <Typography component="span" variant="body2" color="text.secondary">Path:&nbsp;</Typography>
                             {share.path || 'No path set'}
                           </Typography>
 
                           {share.comment && (
-                            <Typography variant="body2" component="span">
-                              <Typography component="span" variant="body2" color="text.secondary">Comment: </Typography>
+                            <Typography variant="body2" component="span" sx={{ display: 'flex', alignItems: 'center' }}>
+                              <CommentIcon fontSize="small" sx={{ mr: 0.5, color: 'text.secondary' }} />
+                              <Typography component="span" variant="body2" color="text.secondary">Comment:&nbsp;</Typography>
                               {share.comment}
                             </Typography>
                           )}
