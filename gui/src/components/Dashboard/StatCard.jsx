@@ -8,6 +8,8 @@ import PeopleIcon from '@mui/icons-material/People';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import Tooltip from '@mui/material/Tooltip';
 
 const StatCard = ({
   title,
@@ -16,7 +18,9 @@ const StatCard = ({
   icon,
   status,
   actionText,
-  onAction
+  onAction,
+  actionDisabled,
+  additionalInfo
 }) => {
   const getIcon = () => {
     switch (icon) {
@@ -58,6 +62,16 @@ const StatCard = ({
               {subtext}
             </Typography>
           )}
+          {additionalInfo && (
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+              <AccessTimeIcon fontSize="small" sx={{ color: 'text.secondary', mr: 0.5 }} />
+              <Tooltip title={`Service running since: ${additionalInfo.since}`} arrow>
+                <Typography variant="body2" color="text.secondary">
+                  Uptime: {additionalInfo.uptime}
+                </Typography>
+              </Tooltip>
+            </Box>
+          )}
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {getIcon()}
@@ -68,6 +82,7 @@ const StatCard = ({
           variant="outlined"
           color="primary"
           onClick={onAction}
+          disabled={actionDisabled}
           sx={{ mt: 2, alignSelf: 'flex-start' }}
         >
           {actionText}

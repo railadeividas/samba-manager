@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
 import SharesPage from './pages/SharesPage';
@@ -7,34 +7,10 @@ import GroupsPage from './pages/GroupsPage';
 import RawConfigPage from './pages/RawConfigPage';
 import LoginPage from './pages/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
-import { getServiceStatus } from './services/serviceStatus';
-import { useApp } from './context/AppContext';
 import { useAuth } from './context/AuthContext';
 
 function App() {
-  const { setServiceStatus } = useApp();
   const { isAuthenticated } = useAuth();
-
-  // Check service status on component mount and periodically
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const checkServiceStatus = async () => {
-      try {
-        const status = await getServiceStatus();
-        setServiceStatus(status);
-      } catch (error) {
-        console.error('Failed to get service status:', error);
-      }
-    };
-
-    checkServiceStatus();
-
-    // Set up periodic status check
-    const interval = setInterval(checkServiceStatus, 30000); // every 30 seconds
-
-    return () => clearInterval(interval);
-  }, [isAuthenticated, setServiceStatus]);
 
   return (
     <Routes>
