@@ -211,7 +211,11 @@ func writeSambaConfig(shares SharesConfig) error {
 
 	// Add custom shares
 	for shareName, params := range shares {
-		newConfig = append(newConfig, fmt.Sprintf("\n[%s]", shareName))
+		// Don't add an extra newline before the first share
+		if len(newConfig) > 0 && newConfig[len(newConfig)-1] != "" {
+			newConfig = append(newConfig, "") // Add just one empty line between sections
+		}
+		newConfig = append(newConfig, fmt.Sprintf("[%s]", shareName))
 		for paramName, paramValue := range params {
 			newConfig = append(newConfig, fmt.Sprintf("    %s = %s", paramName, paramValue))
 		}

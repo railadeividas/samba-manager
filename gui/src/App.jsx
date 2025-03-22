@@ -4,6 +4,7 @@ import DashboardPage from './pages/DashboardPage';
 import SharesPage from './pages/SharesPage';
 import UsersPage from './pages/UsersPage';
 import GroupsPage from './pages/GroupsPage';
+import RawConfigPage from './pages/RawConfigPage';
 import LoginPage from './pages/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { getServiceStatus } from './services/serviceStatus';
@@ -13,8 +14,6 @@ import { useAuth } from './context/AuthContext';
 function App() {
   const { setServiceStatus } = useApp();
   const { isAuthenticated } = useAuth();
-
-  console.log("App rendered, auth state:", isAuthenticated);
 
   // Check service status on component mount and periodically
   useEffect(() => {
@@ -48,6 +47,7 @@ function App() {
         <Route path="/shares" element={<SharesPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/groups" element={<GroupsPage />} />
+        <Route path="/config" element={<RawConfigPage />} />
       </Route>
 
       {/* Redirect Routes */}
