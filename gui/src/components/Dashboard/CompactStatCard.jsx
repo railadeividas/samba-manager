@@ -3,15 +3,17 @@ import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
 import FolderSharedIcon from '@mui/icons-material/FolderShared';
 import PeopleIcon from '@mui/icons-material/People';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import Tooltip from '@mui/material/Tooltip';
 
-const StatCard = ({
+const CompactStatCard = ({
   title,
   value,
   subtext,
@@ -41,55 +43,75 @@ const StatCard = ({
     <Paper
       elevation={1}
       sx={{
-        p: 3,
+        p: 2,
         height: '100%',
         display: 'flex',
-        flexDirection: 'column',
         justifyContent: 'space-between',
+        alignItems: 'center',
         borderRadius: 2
       }}
     >
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        <Box
+          sx={{
+            bgcolor: icon === 'status' ? (status ? 'success.lighter' : 'error.lighter') : 'primary.lighter',
+            p: 1.5,
+            borderRadius: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            mr: 2
+          }}
+        >
+          {getIcon()}
+        </Box>
+
         <Box>
-          <Typography variant="h6" gutterBottom>
+          <Typography variant="body2" color="text.secondary">
             {title}
           </Typography>
-          <Typography variant="h3" component="div" sx={{ fontWeight: 'bold' }}>
+          <Typography variant="h6" component="div" fontWeight="medium">
             {value}
           </Typography>
-          {subtext && (
-            <Typography variant="body2" color="text.secondary">
-              {subtext}
-            </Typography>
-          )}
           {additionalInfo && (
-            <Box sx={{ display: 'flex', alignItems: 'center', mt: 0 }}>
-              <AccessTimeIcon fontSize="small" sx={{ color: 'text.secondary', mr: 0.5 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+              <AccessTimeIcon fontSize="small" sx={{ color: 'text.secondary', mr: 0.5, fontSize: 14 }} />
               <Tooltip title={`Service running since: ${additionalInfo.since}`} arrow>
-                <Typography variant="body2" color="text.secondary">
-                  Uptime: {additionalInfo.uptime}
+                <Typography variant="caption" color="text.secondary">
+                  {additionalInfo.uptime}
                 </Typography>
               </Tooltip>
             </Box>
           )}
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {getIcon()}
-        </Box>
       </Box>
+
       {actionText && (
-        <Button
-          variant="outlined"
-          color="primary"
-          onClick={onAction}
-          disabled={actionDisabled}
-          sx={{ mt: 2, alignSelf: 'flex-start' }}
-        >
-          {actionText}
-        </Button>
+        icon === 'status' ? (
+          <Button
+            variant="outlined"
+            color="primary"
+            size="small"
+            onClick={onAction}
+            disabled={actionDisabled}
+          >
+            {actionText}
+          </Button>
+        ) : (
+          <Tooltip title={actionText}>
+            <IconButton
+              color="primary"
+              size="small"
+              onClick={onAction}
+              disabled={actionDisabled}
+            >
+              <ArrowForwardIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )
       )}
     </Paper>
   );
 };
 
-export default StatCard;
+export default CompactStatCard;

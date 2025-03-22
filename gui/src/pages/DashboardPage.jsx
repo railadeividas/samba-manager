@@ -19,7 +19,7 @@ import { useApi } from '../services/useApi';
 import { useNotification } from '../context/NotificationContext';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConnectionError from '../components/Common/ConnectionError';
-import StatCard from '../components/Dashboard/StatCard';
+import CompactStatCard from '../components/Dashboard/CompactStatCard';
 import FilesystemCard from '../components/Dashboard/FilesystemCard';
 import SharesList from '../components/Dashboard/SharesList';
 import UsersList from '../components/Dashboard/UsersList';
@@ -246,40 +246,41 @@ const DashboardPage = () => {
         <LoadingSpinner message="Loading dashboard..." />
       ) : (
         <>
-          <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid item xs={12} md={4}>
-              <StatCard
-                title="Service Status"
-                value={serviceStatusData?.status || serviceStatus.status}
-                icon="status"
-                status={serviceStatusData?.active || serviceStatus.active}
-                actionText={restartLoading ? "Restarting..." : "Restart"}
-                onAction={handleRestartService}
-                actionDisabled={restartLoading}
-                additionalInfo={getUptimeInfo()}
-              />
+          {/* Stats Row - More compact layout */}
+          <Box sx={{ mb: 3 }}>
+            <Grid container spacing={2}>
+              <Grid item sm={12} md={6} lg={4}>
+                <CompactStatCard
+                  title="Service Status"
+                  value={serviceStatusData?.status || serviceStatus.status}
+                  icon="status"
+                  status={serviceStatusData?.active || serviceStatus.active}
+                  actionText={restartLoading ? "Restarting..." : "Restart"}
+                  onAction={handleRestartService}
+                  actionDisabled={restartLoading}
+                  additionalInfo={getUptimeInfo()}
+                />
+              </Grid>
+              <Grid item sm={12} md={6} lg={4}>
+                <CompactStatCard
+                  title="Users"
+                  value={usersData?.users ? usersData.users.length : 0}
+                  icon="users"
+                  actionText="Manage Users"
+                  onAction={() => navigate('/users')}
+                />
+              </Grid>
+              <Grid item sm={12} md={6} lg={4}>
+                <CompactStatCard
+                  title="Shares"
+                  value={sharesData ? Object.keys(sharesData).length : 0}
+                  icon="shares"
+                  actionText="Manage Shares"
+                  onAction={() => navigate('/shares')}
+                />
+              </Grid>
             </Grid>
-            <Grid item xs={12} md={4}>
-              <StatCard
-                title="Users"
-                value={usersData?.users ? usersData.users.length : 0}
-                subtext="Total users"
-                icon="users"
-                actionText="Manage"
-                onAction={() => navigate('/users')}
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <StatCard
-                title="Shares"
-                value={sharesData ? Object.keys(sharesData).length : 0}
-                subtext="Total shares"
-                icon="shares"
-                actionText="Manage"
-                onAction={() => navigate('/shares')}
-              />
-            </Grid>
-          </Grid>
+          </Box>
 
           {/* Filesystem Usage Section */}
           {filesystemsData && filesystemsData.disks && filesystemsData.disks.length > 0 && (
