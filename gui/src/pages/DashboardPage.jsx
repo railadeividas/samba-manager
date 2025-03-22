@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
@@ -25,6 +25,7 @@ const DashboardPage = () => {
   const { serviceStatus, setServiceStatus, setShares, setUsers } = useApp();
   const [restartLoading, setRestartLoading] = useState(false);
   const [restartError, setRestartError] = useState(null);
+  const statusIntervalRef = useRef(null);
 
   // Use our custom hook for API data fetching for shares
   const {
@@ -53,6 +54,24 @@ const DashboardPage = () => {
     fetchData: fetchStatus,
     forceRetry: forceRetryStatus
   } = useApi(getServiceStatus);
+
+  // Set up periodic status check when dashboard is mounted
+  useEffect(() => {
+    // Initial status check
+    fetchStatus(true);
+
+    // Set up periodic status check
+    statusIntervalRef.current = setInterval(() => {
+      fetchStatus(true);
+    }, 30000); // Check every 30 seconds
+
+    // Clean up interval on unmount
+    return () => {
+      if (statusIntervalRef.current) {
+        clearInterval(statusIntervalRef.current);
+      }
+    };
+  }, [fetchStatus]);
 
   // Combine loading and error states
   const loading = sharesLoading || usersLoading || statusLoading;
@@ -112,6 +131,21 @@ const DashboardPage = () => {
   if (isConnectionError) {
     return <ConnectionError error={error} onRetry={forceRetryStatus} />;
   }
+
+  // Create uptime info object from the service status
+  const getUptimeInfo = () => {
+    const status = serviceStatusData || serviceStatus;
+    if (status.active && status.metadata?.uptime) {
+      const uptimeData = status.metadata.uptime;
+      if (uptimeData.uptime && uptimeData.uptime !== 'N/A') {
+        return {
+          uptime: uptimeData.uptime,
+          since: uptimeData.since
+        };
+      }
+    }
+    return null;
+  };
 
   return (
     <Box>
@@ -183,6 +217,7 @@ const DashboardPage = () => {
                 actionText={restartLoading ? "Restarting..." : "Restart"}
                 onAction={handleRestartService}
                 actionDisabled={restartLoading}
+                additionalInfo={getUptimeInfo()}
               />
             </Grid>
             <Grid item xs={12} md={4}>

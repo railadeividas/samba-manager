@@ -9,7 +9,16 @@ export const useApp = () => useContext(AppContext);
 // Provider component
 export const AppProvider = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [serviceStatus, setServiceStatus] = useState({ active: false, status: 'unknown' });
+  const [serviceStatus, setServiceStatus] = useState({
+    active: false,
+    status: 'unknown',
+    metadata: {
+      uptime: {
+        uptime: 'N/A',
+        since: ''
+      }
+    }
+  });
   const [shares, setShares] = useState({});
   const [users, setUsers] = useState({ users: [] });
   const [groups, setGroups] = useState({ groups: [] });
