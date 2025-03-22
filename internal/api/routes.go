@@ -157,4 +157,16 @@ func (h *APIHandler) registerRoutes() {
 		Method:  http.MethodPost,
 		Handler: h.RestartService,
 	})
+
+	// Storage info routes
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/storage-filesystems$`),
+		Method:  http.MethodGet,
+		Handler: h.GetFileSystemSizes,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/storage-shares$`),
+		Method:  http.MethodGet,
+		Handler: h.GetShareSizes,
+	})
 }

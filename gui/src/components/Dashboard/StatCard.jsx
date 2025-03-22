@@ -63,7 +63,7 @@ const StatCard = ({
             </Typography>
           )}
           {additionalInfo && (
-            <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 0 }}>
               <AccessTimeIcon fontSize="small" sx={{ color: 'text.secondary', mr: 0.5 }} />
               <Tooltip title={`Service running since: ${additionalInfo.since}`} arrow>
                 <Typography variant="body2" color="text.secondary">
