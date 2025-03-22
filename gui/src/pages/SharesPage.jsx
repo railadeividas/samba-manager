@@ -1,61 +1,54 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getShares } from '../services/sharesService';
 import { useApp } from '../context/AppContext';
-import { useNotification } from '../context/NotificationContext';
+import { useApi } from '../services/useApi';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import ConnectionError from '../components/Common/ConnectionError';
 import ShareList from '../components/Shares/ShareList';
 import ShareForm from '../components/Shares/ShareForm';
 
 const SharesPage = () => {
   const location = useLocation();
-  const { showNotification } = useNotification();
-  const { shares, setShares } = useApp();
-  const [loading, setLoading] = useState(true);
+  const { setShares } = useApp();
   const [formOpen, setFormOpen] = useState(false);
   const [currentShare, setCurrentShare] = useState(null);
   const [formMode, setFormMode] = useState('add'); // 'add' or 'edit'
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
-  // Properly wrap fetchShares in useCallback to prevent recreating the function on each render
-  const fetchShares = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await getShares();
-      setShares(data);
-    } catch (error) {
-      showNotification(`Failed to load shares: ${error.message}`, 'error');
-    } finally {
-      setLoading(false);
-      setInitialLoadComplete(true);
-    }
-  }, [setShares, showNotification]);
+  // Use our custom hook for API data fetching
+  const {
+    data: sharesData,
+    loading,
+    error,
+    isConnectionError,
+    fetchData: fetchShares,
+    forceRetry
+  } = useApi(getShares);
 
-  // Initial data load effect
+  // Update the app context when data changes
   useEffect(() => {
-    if (!initialLoadComplete) {
-      fetchShares();
+    if (sharesData) {
+      setShares(sharesData);
     }
-  }, [fetchShares, initialLoadComplete]);
+  }, [sharesData, setShares]);
 
   // Handle navigation state (separate from data loading)
   useEffect(() => {
-    if (!initialLoadComplete) return; // Skip until initial load is complete
-
     if (location.state?.action === 'add') {
       handleAddShare();
-    } else if (location.state?.action === 'edit' && location.state?.shareName) {
+    } else if (location.state?.action === 'edit' && location.state?.shareName && sharesData) {
       const shareName = location.state.shareName;
-      if (shares[shareName]) {
-        handleEditShare(shareName, shares[shareName]);
+      if (sharesData[shareName]) {
+        handleEditShare(shareName, sharesData[shareName]);
       }
     }
-  }, [location.state, shares, initialLoadComplete]);
+  }, [location.state, sharesData]);
 
   const handleAddShare = () => {
     setCurrentShare(null);
@@ -75,9 +68,15 @@ const SharesPage = () => {
   };
 
   const handleFormSubmit = () => {
-    fetchShares();
+    // Force a refresh after form submission
+    fetchShares(true);
     handleFormClose();
   };
+
+  // If there's a connection error, show the ConnectionError component
+  if (isConnectionError) {
+    return <ConnectionError error={error} onRetry={forceRetry} />;
+  }
 
   return (
     <Box>
@@ -109,7 +108,7 @@ const SharesPage = () => {
             variant="outlined"
             color="primary"
             startIcon={<RefreshIcon />}
-            onClick={fetchShares}
+            onClick={() => fetchShares(true)}
             disabled={loading}
           >
             Refresh
@@ -126,13 +125,27 @@ const SharesPage = () => {
         </Box>
       </Box>
 
-      {loading && !initialLoadComplete ? (
+      {error && !isConnectionError && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={forceRetry}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
+      )}
+
+      {loading && (!sharesData || Object.keys(sharesData).length === 0) ? (
         <LoadingSpinner message="Loading shares..." />
       ) : (
         <ShareList
-          shares={shares}
+          shares={sharesData || {}}
           onEdit={handleEditShare}
-          onRefresh={fetchShares}
+          onRefresh={() => fetchShares(true)}
           loading={loading}
         />
       )}
