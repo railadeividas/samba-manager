@@ -12,18 +12,23 @@ import FolderIcon from '@mui/icons-material/Folder';
 import Chip from '@mui/material/Chip';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import LockIcon from '@mui/icons-material/Lock';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import LinearProgress from '@mui/material/LinearProgress';
 import { deleteShare } from '../../services/sharesService';
 import { useNotification } from '../../context/NotificationContext';
 import ConfirmDialog from '../Common/ConfirmDialog';
+import ShareACLDialog from './ShareACLDialog';
 
 const ShareList = ({ shares, onEdit, onRefresh, loading }) => {
   const { showNotification } = useNotification();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [shareToDelete, setShareToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [aclDialogOpen, setAclDialogOpen] = useState(false);
+  const [selectedShare, setSelectedShare] = useState(null);
 
   // Convert shares object to array
   const sharesList = Object.entries(shares).map(([name, config]) => ({
@@ -38,6 +43,11 @@ const ShareList = ({ shares, onEdit, onRefresh, loading }) => {
   const handleDeleteClick = (shareName) => {
     setShareToDelete(shareName);
     setConfirmDelete(true);
+  };
+
+  const handleViewACL = (shareName) => {
+    setSelectedShare(shareName);
+    setAclDialogOpen(true);
   };
 
   const handleConfirmDelete = async () => {
@@ -126,24 +136,47 @@ const ShareList = ({ shares, onEdit, onRefresh, loading }) => {
                       color={(share['guest ok'] || 'no') === 'yes' ? 'warning' : 'default'}
                       variant="outlined"
                     />
+                    {(share['valid users'] || share['write list']) && (
+                      <Chip
+                        label="ACL"
+                        size="small"
+                        color="info"
+                        variant="outlined"
+                        icon={<LockIcon fontSize="small" />}
+                      />
+                    )}
                   </Box>
                 </TableCell>
                 <TableCell align="right">
-                  <IconButton
-                    aria-label="edit"
-                    onClick={() => handleEditClick(share.name, share)}
-                    disabled={loading || deleting}
-                  >
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton
-                    aria-label="delete"
-                    color="error"
-                    onClick={() => handleDeleteClick(share.name)}
-                    disabled={loading || deleting}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+                  <Tooltip title="View ACL Permissions">
+                    <IconButton
+                      aria-label="view acl"
+                      color="info"
+                      onClick={() => handleViewACL(share.name)}
+                      disabled={loading || deleting}
+                    >
+                      <LockIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Edit Share">
+                    <IconButton
+                      aria-label="edit"
+                      onClick={() => handleEditClick(share.name, share)}
+                      disabled={loading || deleting}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete Share">
+                    <IconButton
+                      aria-label="delete"
+                      color="error"
+                      onClick={() => handleDeleteClick(share.name)}
+                      disabled={loading || deleting}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
                 </TableCell>
               </TableRow>
             ))}
@@ -159,6 +192,12 @@ const ShareList = ({ shares, onEdit, onRefresh, loading }) => {
         confirmColor="error"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+      />
+
+      <ShareACLDialog
+        open={aclDialogOpen}
+        shareName={selectedShare}
+        onClose={() => setAclDialogOpen(false)}
       />
     </>
   );

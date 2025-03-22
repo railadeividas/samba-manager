@@ -28,6 +28,20 @@ export const getShare = async (shareName) => {
 };
 
 /**
+ * Get ACLs for a share
+ * @param {string} shareName - Share name
+ * @returns {Promise<Object>} - ACL data
+ */
+export const getShareACLs = async (shareName) => {
+  try {
+    const response = await api.get(`/shares/${shareName}/acl`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
  * Create or update a share
  * @param {string} shareName - Share name
  * @param {Object} shareData - Share configuration

@@ -79,6 +79,11 @@ func (h *APIHandler) registerRoutes() {
 		Method:  http.MethodDelete,
 		Handler: h.DeleteShare,
 	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/shares/([^/]+)/acl$`),
+		Method:  http.MethodGet,
+		Handler: h.GetShareACLs,
+	})
 
 	// Users routes
 	h.routes = append(h.routes, Route{
