@@ -6,9 +6,13 @@ import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
+import Divider from '@mui/material/Divider';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getShares } from '../services/sharesService';
 import { getUsers } from '../services/usersService';
+import { GetFileSystemSizes } from '../services/storageService';
 import { restartService, getServiceStatus } from '../services/serviceStatus';
 import { useApp } from '../context/AppContext';
 import { useApi } from '../services/useApi';
@@ -16,6 +20,7 @@ import { useNotification } from '../context/NotificationContext';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConnectionError from '../components/Common/ConnectionError';
 import StatCard from '../components/Dashboard/StatCard';
+import FilesystemCard from '../components/Dashboard/FilesystemCard';
 import SharesList from '../components/Dashboard/SharesList';
 import UsersList from '../components/Dashboard/UsersList';
 
@@ -25,6 +30,7 @@ const DashboardPage = () => {
   const { serviceStatus, setServiceStatus, setShares, setUsers } = useApp();
   const [restartLoading, setRestartLoading] = useState(false);
   const [restartError, setRestartError] = useState(null);
+  const [showSystemFilesystems, setShowSystemFilesystems] = useState(false);
   const statusIntervalRef = useRef(null);
 
   // Use our custom hook for API data fetching for shares
@@ -55,6 +61,15 @@ const DashboardPage = () => {
     forceRetry: forceRetryStatus
   } = useApi(getServiceStatus);
 
+  // Use our custom hook for API data fetching for filesystem information
+  const {
+    data: filesystemsData,
+    loading: filesystemsLoading,
+    error: filesystemsError,
+    isConnectionError: isFilesystemsConnectionError,
+    fetchData: fetchFilesystems
+  } = useApi(GetFileSystemSizes);
+
   // Set up periodic status check when dashboard is mounted
   useEffect(() => {
     // Initial status check
@@ -74,9 +89,10 @@ const DashboardPage = () => {
   }, [fetchStatus]);
 
   // Combine loading and error states
-  const loading = sharesLoading || usersLoading || statusLoading;
-  const error = sharesError || usersError || statusError || restartError;
-  const isConnectionError = isSharesConnectionError || isUsersConnectionError || isStatusConnectionError;
+  const loading = sharesLoading || usersLoading || statusLoading || filesystemsLoading;
+  const error = sharesError || usersError || statusError || filesystemsError || restartError;
+  const isConnectionError = isSharesConnectionError || isUsersConnectionError ||
+                           isStatusConnectionError || isFilesystemsConnectionError;
 
   // Update the app context when data changes
   useEffect(() => {
@@ -125,6 +141,11 @@ const DashboardPage = () => {
     fetchShares(true);
     fetchUsers(true);
     fetchStatus(true);
+    fetchFilesystems(true);
+  };
+
+  const handleToggleSystemFilesystems = (event) => {
+    setShowSystemFilesystems(event.target.checked);
   };
 
   // If there's a connection error, show the ConnectionError component
@@ -145,6 +166,23 @@ const DashboardPage = () => {
       }
     }
     return null;
+  };
+
+  // Get filesystems (root and large filesystems)
+  const getFilesystems = () => {
+    if (!filesystemsData || !filesystemsData.disks) {
+      return [];
+    }
+
+    let filteredFilesystems = filesystemsData.disks
+      .filter(filesystem => filesystem.mountedOn === '/' || parseFloat(filesystem.size) > 1); // Root or larger than 1GB
+
+    // Filter out system filesystems if not showing them
+    if (!showSystemFilesystems) {
+      filteredFilesystems = filteredFilesystems.filter(filesystem => !filesystem.isVirtualFS);
+    }
+
+    return filteredFilesystems;
   };
 
   return (
@@ -184,6 +222,7 @@ const DashboardPage = () => {
           startIcon={<RefreshIcon />}
           onClick={handleRefresh}
           disabled={loading || restartLoading}
+          sx={{ ml: 1 }}
         >
           Refresh
         </Button>
@@ -222,16 +261,6 @@ const DashboardPage = () => {
             </Grid>
             <Grid item xs={12} md={4}>
               <StatCard
-                title="Shares"
-                value={sharesData ? Object.keys(sharesData).length : 0}
-                subtext="Total shares"
-                icon="shares"
-                actionText="Manage"
-                onAction={() => navigate('/shares')}
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <StatCard
                 title="Users"
                 value={usersData?.users ? usersData.users.length : 0}
                 subtext="Total users"
@@ -240,8 +269,52 @@ const DashboardPage = () => {
                 onAction={() => navigate('/users')}
               />
             </Grid>
+            <Grid item xs={12} md={4}>
+              <StatCard
+                title="Shares"
+                value={sharesData ? Object.keys(sharesData).length : 0}
+                subtext="Total shares"
+                icon="shares"
+                actionText="Manage"
+                onAction={() => navigate('/shares')}
+              />
+            </Grid>
           </Grid>
 
+          {/* Filesystem Usage Section */}
+          {filesystemsData && filesystemsData.disks && filesystemsData.disks.length > 0 && (
+            <>
+              <Box sx={{ mb: 2, mt: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6">Storage Usage</Typography>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={showSystemFilesystems}
+                      onChange={handleToggleSystemFilesystems}
+                      color="primary"
+                      size="small"
+                    />
+                  }
+                  label="Show all"
+                />
+              </Box>
+              <Divider sx={{ mt: 1, mb: 2 }} />
+
+              {getFilesystems().length > 0 && (
+                <>
+                  <Grid container spacing={3} sx={{ mb: 4 }}>
+                    {getFilesystems().map((filesystem, index) => (
+                      <Grid item xs={12} md={6} lg={4} key={`filesystem-${index}`}>
+                        <FilesystemCard filesystemInfo={filesystem} />
+                      </Grid>
+                    ))}
+                  </Grid>
+                </>
+              )}
+            </>
+          )}
+
+          {/* Shares and Users Lists */}
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
               <Paper

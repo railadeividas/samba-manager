@@ -7,6 +7,7 @@ import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getShares } from '../services/sharesService';
+import { getShareSizes } from '../services/storageService';
 import { useApp } from '../context/AppContext';
 import { useApi } from '../services/useApi';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -21,15 +22,29 @@ const SharesPage = () => {
   const [currentShare, setCurrentShare] = useState(null);
   const [formMode, setFormMode] = useState('add'); // 'add' or 'edit'
 
-  // Use our custom hook for API data fetching
+  // Use our custom hook for API data fetching for shares
   const {
     data: sharesData,
-    loading,
-    error,
-    isConnectionError,
+    loading: sharesLoading,
+    error: sharesError,
+    isConnectionError: isSharesConnectionError,
     fetchData: fetchShares,
-    forceRetry
+    forceRetry: forceRetryShares
   } = useApi(getShares);
+
+  // Use our custom hook for API data fetching for share sizes
+  const {
+    data: shareSizesData,
+    loading: shareSizesLoading,
+    error: shareSizesError,
+    isConnectionError: isShareSizesConnectionError,
+    fetchData: fetchShareSizes
+  } = useApi(getShareSizes);
+
+  // Combine loading and error states
+  const loading = sharesLoading || shareSizesLoading;
+  const error = sharesError || shareSizesError;
+  const isConnectionError = isSharesConnectionError || isShareSizesConnectionError;
 
   // Update the app context when data changes
   useEffect(() => {
@@ -70,13 +85,27 @@ const SharesPage = () => {
   const handleFormSubmit = () => {
     // Force a refresh after form submission
     fetchShares(true);
+    fetchShareSizes(true);
     handleFormClose();
+  };
+
+  const handleRefresh = () => {
+    fetchShares(true);
+    fetchShareSizes(true);
   };
 
   // If there's a connection error, show the ConnectionError component
   if (isConnectionError) {
-    return <ConnectionError error={error} onRetry={forceRetry} />;
+    return <ConnectionError error={error} onRetry={forceRetryShares} />;
   }
+
+  // Get share sizes from the API response
+  const getSharesSizeData = () => {
+    if (!shareSizesData || !shareSizesData.shares) {
+      return [];
+    }
+    return shareSizesData.shares;
+  };
 
   return (
     <Box>
@@ -108,7 +137,7 @@ const SharesPage = () => {
             variant="outlined"
             color="primary"
             startIcon={<RefreshIcon />}
-            onClick={() => fetchShares(true)}
+            onClick={handleRefresh}
             disabled={loading}
           >
             Refresh
@@ -130,7 +159,7 @@ const SharesPage = () => {
           severity="error"
           sx={{ mb: 3 }}
           action={
-            <Button color="inherit" size="small" onClick={forceRetry}>
+            <Button color="inherit" size="small" onClick={handleRefresh}>
               Retry
             </Button>
           }
@@ -145,8 +174,9 @@ const SharesPage = () => {
         <ShareList
           shares={sharesData || {}}
           onEdit={handleEditShare}
-          onRefresh={() => fetchShares(true)}
+          onRefresh={handleRefresh}
           loading={loading}
+          sharesSizeData={getSharesSizeData()}
         />
       )}
 
