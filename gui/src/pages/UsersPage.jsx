@@ -1,86 +1,69 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getUsers } from '../services/usersService';
 import { useApp } from '../context/AppContext';
-import { useNotification } from '../context/NotificationContext';
+import { useApi } from '../services/useApi';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import ConnectionError from '../components/Common/ConnectionError';
 import UserList from '../components/Users/UserList';
 import UserForm from '../components/Users/UserForm';
-import PasswordForm from '../components/Users/PasswordForm';
 
 const UsersPage = () => {
   const location = useLocation();
-  const { showNotification } = useNotification();
-  const { users, setUsers } = useApp();
-  const [loading, setLoading] = useState(true);
-  const [userFormOpen, setUserFormOpen] = useState(false);
-  const [passwordFormOpen, setPasswordFormOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const { setUsers } = useApp();
+  const [formOpen, setFormOpen] = useState(false);
 
-  // Properly wrap fetchUsers in useCallback to prevent recreating the function on each render
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await getUsers();
-      setUsers(data);
-    } catch (error) {
-      showNotification(`Failed to load users: ${error.message}`, 'error');
-    } finally {
-      setLoading(false);
-      setInitialLoadComplete(true);
-    }
-  }, [setUsers, showNotification]);
+  // Use our custom hook for API data fetching
+  const {
+    data: usersData,
+    loading,
+    error,
+    isConnectionError,
+    fetchData: fetchUsers,
+    forceRetry
+  } = useApi(getUsers);
 
-  // Initial data load effect
+  // Update the app context when data changes
   useEffect(() => {
-    if (!initialLoadComplete) {
-      fetchUsers();
+    if (usersData) {
+      setUsers(usersData);
     }
-  }, [fetchUsers, initialLoadComplete]);
+  }, [usersData, setUsers]);
 
-  // Handle navigation state (separate from data loading)
+  // Handle navigation state
   useEffect(() => {
-    if (!initialLoadComplete) return; // Skip until initial load is complete
-
     if (location.state?.action === 'add') {
       handleAddUser();
-    } else if (location.state?.action === 'edit' && location.state?.username) {
-      const username = location.state.username;
-      handleChangePassword(username);
     }
-  }, [location.state, initialLoadComplete]);
+  }, [location.state]);
 
   const handleAddUser = () => {
-    setCurrentUser(null);
-    setUserFormOpen(true);
+    setFormOpen(true);
   };
 
-  const handleChangePassword = (username) => {
-    setCurrentUser(username);
-    setPasswordFormOpen(true);
-  };
-
-  const handleUserFormClose = () => {
-    setUserFormOpen(false);
-    setCurrentUser(null);
-  };
-
-  const handlePasswordFormClose = () => {
-    setPasswordFormOpen(false);
-    setCurrentUser(null);
+  const handleFormClose = () => {
+    setFormOpen(false);
   };
 
   const handleFormSubmit = () => {
-    fetchUsers();
-    handleUserFormClose();
-    handlePasswordFormClose();
+    fetchUsers(true);
+    handleFormClose();
   };
+
+  const handleRefresh = () => {
+    fetchUsers(true);
+  };
+
+  // If there's a connection error, show the ConnectionError component
+  if (isConnectionError) {
+    return <ConnectionError error={error} onRetry={forceRetry} />;
+  }
 
   return (
     <Box>
@@ -112,7 +95,7 @@ const UsersPage = () => {
             variant="outlined"
             color="primary"
             startIcon={<RefreshIcon />}
-            onClick={fetchUsers}
+            onClick={handleRefresh}
             disabled={loading}
           >
             Refresh
@@ -129,31 +112,35 @@ const UsersPage = () => {
         </Box>
       </Box>
 
-      {loading && !initialLoadComplete ? (
+      {error && !isConnectionError && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={forceRetry}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
+      )}
+
+      {loading && (!usersData || !usersData.users || usersData.users.length === 0) ? (
         <LoadingSpinner message="Loading users..." />
       ) : (
         <UserList
-          users={users.users || []}
-          onChangePassword={handleChangePassword}
-          onRefresh={fetchUsers}
+          users={usersData?.users || []}
+          onRefresh={handleRefresh}
           loading={loading}
         />
       )}
 
-      {userFormOpen && (
+      {formOpen && (
         <UserForm
-          open={userFormOpen}
+          open={formOpen}
           onSubmit={handleFormSubmit}
-          onClose={handleUserFormClose}
-        />
-      )}
-
-      {passwordFormOpen && (
-        <PasswordForm
-          open={passwordFormOpen}
-          username={currentUser}
-          onSubmit={handleFormSubmit}
-          onClose={handlePasswordFormClose}
+          onClose={handleFormClose}
         />
       )}
     </Box>

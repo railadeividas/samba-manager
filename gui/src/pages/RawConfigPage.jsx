@@ -1,59 +1,81 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Typography, Button, Paper, Divider, CircularProgress } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Box, Typography, Button, Paper, Divider, CircularProgress, Alert } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import ConnectionError from '../components/Common/ConnectionError';
 import { getRawConfig, saveRawConfig } from '../services/rawConfigService';
+import { useApi } from '../services/useApi';
 import { useNotification } from '../context/NotificationContext';
 
 const RawConfigPage = () => {
   const { showNotification } = useNotification();
   const [configContent, setConfigContent] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [originalContent, setOriginalContent] = useState('');
+  const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [originalContent, setOriginalContent] = useState('');
+  const [saveError, setSaveError] = useState(null);
 
-  // Load configuration on component mount
+  // Use our custom hook for API data fetching
+  const {
+    data: configData,
+    loading,
+    error,
+    isConnectionError,
+    fetchData: fetchConfig,
+    forceRetry
+  } = useApi(getRawConfig);
+
+  // Update content when data changes
   useEffect(() => {
-    loadConfig();
-  }, []);
-
-  const loadConfig = async () => {
-    setLoading(true);
-    try {
-      const response = await getRawConfig();
-      setConfigContent(response.content);
-      setOriginalContent(response.content);
+    if (configData && configData.content !== undefined) {
+      setConfigContent(configData.content);
+      setOriginalContent(configData.content);
       setHasChanges(false);
-    } catch (error) {
-      showNotification(`Failed to load configuration: ${error.message}`, 'error');
-    } finally {
-      setLoading(false);
     }
+  }, [configData]);
+
+  const handleContentChange = (e) => {
+    setConfigContent(e.target.value);
+    setHasChanges(e.target.value !== originalContent);
+  };
+
+  const handleRefresh = () => {
+    fetchConfig(true);
   };
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
+
     try {
       await saveRawConfig(configContent);
       showNotification('Configuration saved successfully', 'success');
       setOriginalContent(configContent);
       setHasChanges(false);
     } catch (error) {
-      showNotification(`Failed to save configuration: ${error.message}`, 'error');
+      console.error('Failed to save configuration:', error);
+
+      if (error.isConnectionError) {
+        // Handle connection error
+        showNotification('Connection failed. Unable to save configuration.', 'error');
+      } else {
+        showNotification(`Failed to save configuration: ${error.message || 'Something went wrong'}`, 'error');
+      }
+
+      setSaveError(error.message || 'Failed to save configuration');
     } finally {
       setSaving(false);
       setConfirmOpen(false);
     }
   };
 
-  const handleContentChange = (e) => {
-    setConfigContent(e.target.value);
-    setHasChanges(e.target.value !== originalContent);
-  };
+  // If there's a connection error, show the ConnectionError component
+  if (isConnectionError) {
+    return <ConnectionError error={error} onRetry={forceRetry} />;
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -85,7 +107,7 @@ const RawConfigPage = () => {
             variant="outlined"
             color="primary"
             startIcon={<RefreshIcon />}
-            onClick={loadConfig}
+            onClick={handleRefresh}
             disabled={loading || saving}
           >
             Refresh
@@ -101,6 +123,20 @@ const RawConfigPage = () => {
           </Button>
         </Box>
       </Box>
+
+      {(error || saveError) && !isConnectionError && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={error ? forceRetry : () => setSaveError(null)}>
+              {error ? 'Retry' : 'Dismiss'}
+            </Button>
+          }
+        >
+          {error || saveError}
+        </Alert>
+      )}
 
       <Paper
         elevation={1}
@@ -122,7 +158,7 @@ const RawConfigPage = () => {
         </Typography>
       </Paper>
 
-      {loading ? (
+      {loading && !configData ? (
         <LoadingSpinner message="Loading configuration..." />
       ) : (
         <Paper
@@ -156,6 +192,7 @@ const RawConfigPage = () => {
               resize: 'vertical',
               overflow: 'auto'
             }}
+            disabled={loading || saving}
           />
         </Paper>
       )}

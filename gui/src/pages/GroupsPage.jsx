@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Alert from '@mui/material/Alert';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import AddIcon from '@mui/icons-material/Add';
@@ -10,86 +11,130 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { getGroups } from '../services/groupsService';
 import { getUsers } from '../services/usersService';
 import { useApp } from '../context/AppContext';
-import { useNotification } from '../context/NotificationContext';
+import { useApi } from '../services/useApi';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import ConnectionError from '../components/Common/ConnectionError';
 import GroupList from '../components/Groups/GroupList';
 import GroupForm from '../components/Groups/GroupForm';
 
 const GroupsPage = () => {
   const location = useLocation();
-  const { showNotification } = useNotification();
-  const { groups, setGroups, users, setUsers } = useApp();
-  const [loading, setLoading] = useState(true);
+  const { setGroups, setUsers } = useApp();
   const [formOpen, setFormOpen] = useState(false);
   const [currentGroup, setCurrentGroup] = useState(null);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [showSystemGroups, setShowSystemGroups] = useState(false);
 
-  // Fetch groups and users
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Fetch groups with system groups toggle
-      const groupsData = await getGroups(showSystemGroups);
+  // Refs to track if this is a toggle-initiated reload
+  const toggleInitiatedRef = useRef(false);
+  const mountedRef = useRef(false);
+
+  // Create a stable function to fetch groups
+  const fetchGroupsFunction = useCallback(() => {
+    return getGroups(showSystemGroups);
+  }, [showSystemGroups]);
+
+  // Use our custom hook for API data fetching for groups
+  const {
+    data: groupsData,
+    loading: groupsLoading,
+    error: groupsError,
+    isConnectionError: isGroupsConnectionError,
+    fetchData: fetchGroups,
+    forceRetry: forceRetryGroups
+  } = useApi(fetchGroupsFunction, [], [], true);
+
+  // Use our custom hook for API data fetching for users
+  const {
+    data: usersData,
+    loading: usersLoading,
+    error: usersError,
+    isConnectionError: isUsersConnectionError,
+    fetchData: fetchUsers
+  } = useApi(getUsers);
+
+  // Combine loading and error states
+  const loading = groupsLoading || usersLoading;
+  const error = groupsError || usersError;
+  const isConnectionError = isGroupsConnectionError || isUsersConnectionError;
+
+  // Update the app context when data changes
+  useEffect(() => {
+    if (groupsData) {
       setGroups(groupsData);
+    }
+  }, [groupsData, setGroups]);
 
-      // Fetch users for member selection
-      const usersData = await getUsers();
+  useEffect(() => {
+    if (usersData) {
       setUsers(usersData);
-    } catch (error) {
-      showNotification(`Failed to load data: ${error.message}`, 'error');
-    } finally {
-      setLoading(false);
-      setInitialLoadComplete(true);
     }
-  }, [setGroups, setUsers, showNotification, showSystemGroups]);
+  }, [usersData, setUsers]);
 
-  // Initial data load effect
+  // Mark component as mounted
   useEffect(() => {
-    if (!initialLoadComplete) {
-      fetchData();
-    }
-  }, [fetchData, initialLoadComplete]);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  // Reload when system groups toggle changes
+  // Handle the system groups toggle change
+  const handleToggleSystemGroups = useCallback((event) => {
+    setShowSystemGroups(event.target.checked);
+    // Set the flag to indicate this change should trigger a reload
+    toggleInitiatedRef.current = true;
+  }, []);
+
+  // Effect to reload when system groups toggle changes
   useEffect(() => {
-    if (initialLoadComplete) {
-      fetchData();
+    // Only reload if the toggle was initiated by user and component is mounted
+    if (toggleInitiatedRef.current && mountedRef.current) {
+      fetchGroups(true);
+      toggleInitiatedRef.current = false;
     }
-  }, [showSystemGroups, fetchData, initialLoadComplete]);
+  }, [showSystemGroups, fetchGroups]);
 
   // Handle navigation state
   useEffect(() => {
-    if (!initialLoadComplete) return;
-
     if (location.state?.action === 'add') {
       handleAddGroup();
     }
-  }, [location.state, initialLoadComplete]);
+  }, [location.state]);
 
-  const handleAddGroup = () => {
+  const handleAddGroup = useCallback(() => {
     setCurrentGroup(null);
     setFormOpen(true);
-  };
+  }, []);
 
-  const handleEditGroup = (group) => {
+  const handleEditGroup = useCallback((group) => {
     setCurrentGroup(group);
     setFormOpen(true);
-  };
+  }, []);
 
-  const handleFormClose = () => {
+  const handleFormClose = useCallback(() => {
     setFormOpen(false);
     setCurrentGroup(null);
-  };
+  }, []);
 
-  const handleFormSubmit = () => {
-    fetchData();
+  const handleFormSubmit = useCallback(() => {
+    fetchGroups(true);
     handleFormClose();
-  };
+  }, [fetchGroups, handleFormClose]);
 
-  const handleToggleSystemGroups = (event) => {
-    setShowSystemGroups(event.target.checked);
-  };
+  const handleRefresh = useCallback(() => {
+    fetchGroups(true);
+    fetchUsers(true);
+  }, [fetchGroups, fetchUsers]);
+
+  const forceRetry = useCallback(() => {
+    forceRetryGroups();
+    fetchUsers(true);
+  }, [forceRetryGroups, fetchUsers]);
+
+  // If there's a connection error, show the ConnectionError component
+  if (isConnectionError) {
+    return <ConnectionError error={error} onRetry={forceRetry} />;
+  }
 
   return (
     <Box>
@@ -131,7 +176,7 @@ const GroupsPage = () => {
             variant="outlined"
             color="primary"
             startIcon={<RefreshIcon />}
-            onClick={fetchData}
+            onClick={handleRefresh}
             disabled={loading}
           >
             Refresh
@@ -148,14 +193,28 @@ const GroupsPage = () => {
         </Box>
       </Box>
 
-      {loading && !initialLoadComplete ? (
+      {error && !isConnectionError && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={forceRetry}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
+      )}
+
+      {loading && (!groupsData || !groupsData.groups || groupsData.groups.length === 0) ? (
         <LoadingSpinner message="Loading groups..." />
       ) : (
         <GroupList
-          groups={groups.groups || []}
-          allUsers={users.users || []}
+          groups={groupsData?.groups || []}
+          allUsers={usersData?.users || []}
           onEdit={handleEditGroup}
-          onRefresh={fetchData}
+          onRefresh={handleRefresh}
           loading={loading}
         />
       )}
@@ -164,7 +223,7 @@ const GroupsPage = () => {
         <GroupForm
           open={formOpen}
           groupData={currentGroup}
-          allUsers={users.users || []}
+          allUsers={usersData?.users || []}
           onSubmit={handleFormSubmit}
           onClose={handleFormClose}
         />
