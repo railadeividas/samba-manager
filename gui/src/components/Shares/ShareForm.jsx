@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -10,19 +10,96 @@ import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import FormHelperText from '@mui/material/FormHelperText';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Checkbox from '@mui/material/Checkbox';
 import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import InfoIcon from '@mui/icons-material/Info';
 import Box from '@mui/material/Box';
+import Autocomplete from '@mui/material/Autocomplete';
+import Chip from '@mui/material/Chip';
+import GroupsIcon from '@mui/icons-material/Groups';
+import PersonIcon from '@mui/icons-material/Person';
+import LockIcon from '@mui/icons-material/Lock';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { createUpdateShare } from '../../services/sharesService';
+import { getUsers } from '../../services/usersService';
+import { getGroups } from '../../services/groupsService';
 import { useNotification } from '../../context/NotificationContext';
 
 const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
   const { showNotification } = useNotification();
   const isEditMode = mode === 'edit';
+  const [users, setUsers] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [validUserOptions, setValidUserOptions] = useState([]);
+  const [writeListOptions, setWriteListOptions] = useState([]);
+  const [validUsersSelected, setValidUsersSelected] = useState([]);
+  const [writeListSelected, setWriteListSelected] = useState([]);
+  const [includeSystemGroups, setIncludeSystemGroups] = useState(false);
+
+  // Load users and groups
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const usersData = await getUsers();
+        const groupsData = await getGroups(includeSystemGroups);
+
+        setUsers(usersData.users || []);
+        setGroups(groupsData.groups || []);
+
+        // Prepare options for autocomplete
+        const userOptions = (usersData.users || []).map(user => ({
+          type: 'user',
+          label: user,
+          value: user
+        }));
+
+        const groupOptions = (groupsData.groups || []).map(group => ({
+          type: 'group',
+          label: `@${group.name}`,
+          value: `@${group.name}`,
+          isSystem: group.isSystem
+        }));
+
+        setValidUserOptions([...userOptions, ...groupOptions]);
+        setWriteListOptions([...userOptions, ...groupOptions]);
+      } catch (error) {
+        console.error('Failed to load users and groups:', error);
+        showNotification(`Failed to load users and groups: ${error.message}`, 'error');
+      }
+    };
+
+    loadData();
+  }, [showNotification, includeSystemGroups]);
+
+  // Parse existing valid users and write list
+  useEffect(() => {
+    if (shareData) {
+      const parseEntityList = (listStr) => {
+        if (!listStr) return [];
+        return listStr.split(',')
+          .map(item => item.trim())
+          .filter(item => item !== '')
+          .map(item => {
+            const isGroup = item.startsWith('@') || item.startsWith('+');
+            return {
+              type: isGroup ? 'group' : 'user',
+              label: item,
+              value: item
+            };
+          });
+      };
+
+      const validUsers = parseEntityList(shareData['valid users']);
+      const writeList = parseEntityList(shareData['write list']);
+
+      setValidUsersSelected(validUsers);
+      setWriteListSelected(writeList);
+    }
+  }, [shareData]);
 
   // Create validation schema
   const validationSchema = Yup.object({
@@ -50,7 +127,23 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
     onSubmit: async (values) => {
       try {
         const shareName = values.name;
-        const { name, ...shareConfig } = values;
+
+        // Convert selections to comma-separated strings
+        const validUsersStr = validUsersSelected
+          .map(item => item.value)
+          .join(', ');
+
+        const writeListStr = writeListSelected
+          .map(item => item.value)
+          .join(', ');
+
+        const shareConfig = {
+          ...values,
+          'valid users': validUsersStr,
+          'write list': writeListStr,
+        };
+
+        delete shareConfig.name;
 
         await createUpdateShare(shareName, shareConfig);
         showNotification(
@@ -63,6 +156,52 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
       }
     },
   });
+
+  // Handle system groups toggle
+  const handleSystemGroupsToggle = (event) => {
+    setIncludeSystemGroups(event.target.checked);
+  };
+
+  // Render option with icon based on type (user or group)
+  const renderOption = (props, option) => (
+    <li {...props}>
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        {option.type === 'group' ? (
+          option.isSystem ? (
+            <LockIcon sx={{ mr: 1, color: 'warning.main' }} />
+          ) : (
+            <GroupsIcon sx={{ mr: 1, color: 'warning.main' }} />
+          )
+        ) : (
+          <PersonIcon sx={{ mr: 1, color: 'info.main' }} />
+        )}
+        {option.label}
+        {option.isSystem && (
+          <Typography variant="caption" color="warning.main" sx={{ ml: 1 }}>
+            (System)
+          </Typography>
+        )}
+      </Box>
+    </li>
+  );
+
+  // Render selected tags with icons
+  const renderTags = (value, getTagProps) =>
+    value.map((option, index) => (
+      <Chip
+        key={index}
+        label={option.label}
+        {...getTagProps({ index })}
+        icon={
+          option.type === 'group' ?
+            (option.isSystem ? <LockIcon /> : <GroupsIcon />) :
+            <PersonIcon />
+        }
+        color={option.type === 'group' ? (option.isSystem ? 'warning' : 'success') : 'info'}
+        variant="outlined"
+        size="small"
+      />
+    ));
 
   return (
     <Dialog
@@ -86,9 +225,9 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                 The system will automatically set up Linux ACLs based on your "Valid Users" and "Write List" settings:
               </Typography>
               <Typography variant="body2" component="ul" sx={{ mt: 1, pl: 2 }}>
-                <li>Users in "Valid Users" will have read and execute permissions (r-x)</li>
-                <li>Users in "Write List" will have read, write, and execute permissions (rwx)</li>
-                <li>These permissions will be applied at the file system level</li>
+                <li>Users and groups in "Valid Users" will have read and execute permissions (r-x)</li>
+                <li>Users and groups in "Write List" will have read, write, and execute permissions (rwx)</li>
+                <li>Use groups (prefixed with @) to give multiple users the same permissions</li>
               </Typography>
             </Box>
           </Paper>
@@ -200,33 +339,67 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
               </FormControl>
             </Grid>
 
+            {/* System groups checkbox */}
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={includeSystemGroups}
+                    onChange={handleSystemGroupsToggle}
+                    color="primary"
+                  />
+                }
+                label="Include system groups in selection"
+              />
+            </Grid>
+
             {/* Valid users field */}
             <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                id="valid users"
-                name="valid users"
-                label="Valid Users"
-                variant="outlined"
-                value={formik.values['valid users']}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                helperText="Comma-separated list of users who can access this share (read & execute permissions)"
+              <Autocomplete
+                multiple
+                id="validUsers"
+                options={validUserOptions}
+                value={validUsersSelected}
+                onChange={(_, newValue) => {
+                  setValidUsersSelected(newValue);
+                }}
+                renderOption={renderOption}
+                renderTags={renderTags}
+                getOptionLabel={(option) => option.label}
+                isOptionEqualToValue={(option, value) => option.value === value.value}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Valid Users & Groups"
+                    placeholder="Select users and groups"
+                    helperText="Users and groups with read & execute access (r-x)"
+                  />
+                )}
               />
             </Grid>
 
             {/* Write list field */}
             <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                id="write list"
-                name="write list"
-                label="Write List"
-                variant="outlined"
-                value={formik.values['write list']}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                helperText="Comma-separated list of users with write access (read, write & execute permissions)"
+              <Autocomplete
+                multiple
+                id="writeList"
+                options={writeListOptions}
+                value={writeListSelected}
+                onChange={(_, newValue) => {
+                  setWriteListSelected(newValue);
+                }}
+                renderOption={renderOption}
+                renderTags={renderTags}
+                getOptionLabel={(option) => option.label}
+                isOptionEqualToValue={(option, value) => option.value === value.value}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Write List (Users & Groups)"
+                    placeholder="Select users and groups"
+                    helperText="Users and groups with read, write & execute access (rwx)"
+                  />
+                )}
               />
             </Grid>
 
