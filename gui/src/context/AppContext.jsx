@@ -12,9 +12,11 @@ export const AppProvider = ({ children }) => {
   const [serviceStatus, setServiceStatus] = useState({ active: false, status: 'unknown' });
   const [shares, setShares] = useState({});
   const [users, setUsers] = useState({ users: [] });
+  const [groups, setGroups] = useState({ groups: [] });
   const [isLoading, setIsLoading] = useState({
     shares: false,
     users: false,
+    groups: false,
     service: false
   });
 
@@ -33,6 +35,8 @@ export const AppProvider = ({ children }) => {
     setShares,
     users,
     setUsers,
+    groups,
+    setGroups,
     isLoading,
     setIsLoading
   };

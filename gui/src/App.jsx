@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
 import SharesPage from './pages/SharesPage';
 import UsersPage from './pages/UsersPage';
+import GroupsPage from './pages/GroupsPage';
 import LoginPage from './pages/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { getServiceStatus } from './services/serviceStatus';
@@ -46,6 +47,7 @@ function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/shares" element={<SharesPage />} />
         <Route path="/users" element={<UsersPage />} />
+        <Route path="/groups" element={<GroupsPage />} />
       </Route>
 
       {/* Redirect Routes */}

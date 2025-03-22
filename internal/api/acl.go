@@ -44,16 +44,29 @@ func setupShareACL(shareData Share) error {
 	if hasValidUsers {
 		// Split comma-separated list and trim spaces
 		validUsers := strings.Split(validUsersStr, ",")
-		for _, user := range validUsers {
-			user = strings.TrimSpace(user)
-			if user == "" {
+		for _, entry := range validUsers {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
 				continue
 			}
 
-			// Set read and execute permissions for user
-			userCmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%s:r-x", user), path)
-			if err := userCmd.Run(); err != nil {
-				return fmt.Errorf("Failed to set ACL for valid user %s: %v", user, err)
+			// Check if it's a group (prefixed with @ or +)
+			if strings.HasPrefix(entry, "@") || strings.HasPrefix(entry, "+") {
+				// It's a group - remove the prefix to get the group name
+				groupName := strings.TrimPrefix(strings.TrimPrefix(entry, "@"), "+")
+
+				// Set read and execute permissions for group
+				groupCmd := exec.Command("setfacl", "-m", fmt.Sprintf("g:%s:r-x", groupName), path)
+				if err := groupCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set ACL for valid group %s: %v", groupName, err)
+				}
+			} else {
+				// It's a user
+				// Set read and execute permissions for user
+				userCmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%s:r-x", entry), path)
+				if err := userCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set ACL for valid user %s: %v", entry, err)
+				}
 			}
 		}
 	}
@@ -62,16 +75,29 @@ func setupShareACL(shareData Share) error {
 	if hasWriteList {
 		// Split comma-separated list and trim spaces
 		writeUsers := strings.Split(writeListStr, ",")
-		for _, user := range writeUsers {
-			user = strings.TrimSpace(user)
-			if user == "" {
+		for _, entry := range writeUsers {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
 				continue
 			}
 
-			// Set read, write, and execute permissions for user
-			userCmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%s:rwx", user), path)
-			if err := userCmd.Run(); err != nil {
-				return fmt.Errorf("Failed to set ACL for write list user %s: %v", user, err)
+			// Check if it's a group (prefixed with @ or +)
+			if strings.HasPrefix(entry, "@") || strings.HasPrefix(entry, "+") {
+				// It's a group - remove the prefix to get the group name
+				groupName := strings.TrimPrefix(strings.TrimPrefix(entry, "@"), "+")
+
+				// Set read, write, and execute permissions for group
+				groupCmd := exec.Command("setfacl", "-m", fmt.Sprintf("g:%s:rwx", groupName), path)
+				if err := groupCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set ACL for write list group %s: %v", groupName, err)
+				}
+			} else {
+				// It's a user
+				// Set read, write, and execute permissions for user
+				userCmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%s:rwx", entry), path)
+				if err := userCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set ACL for write list user %s: %v", entry, err)
+				}
 			}
 		}
 	}
@@ -82,18 +108,31 @@ func setupShareACL(shareData Share) error {
 		return fmt.Errorf("Failed to set default recursive ACLs: %v", err)
 	}
 
-	// For write list users, set default ACLs recursively
+	// For write list entries, set default ACLs recursively
 	if hasWriteList {
 		writeUsers := strings.Split(writeListStr, ",")
-		for _, user := range writeUsers {
-			user = strings.TrimSpace(user)
-			if user == "" {
+		for _, entry := range writeUsers {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
 				continue
 			}
 
-			recurseWriteCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:u:%s:rwx", user), path)
-			if err := recurseWriteCmd.Run(); err != nil {
-				return fmt.Errorf("Failed to set recursive ACLs for write user %s: %v", user, err)
+			// Check if it's a group
+			if strings.HasPrefix(entry, "@") || strings.HasPrefix(entry, "+") {
+				// It's a group - remove the prefix
+				groupName := strings.TrimPrefix(strings.TrimPrefix(entry, "@"), "+")
+
+				// Set default ACLs for group
+				recurseGroupCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:g:%s:rwx", groupName), path)
+				if err := recurseGroupCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set recursive ACLs for write group %s: %v", groupName, err)
+				}
+			} else {
+				// It's a user
+				recurseUserCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:u:%s:rwx", entry), path)
+				if err := recurseUserCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set recursive ACLs for write user %s: %v", entry, err)
+				}
 			}
 		}
 	}
@@ -101,15 +140,28 @@ func setupShareACL(shareData Share) error {
 	// For valid users, set default ACLs recursively
 	if hasValidUsers {
 		validUsers := strings.Split(validUsersStr, ",")
-		for _, user := range validUsers {
-			user = strings.TrimSpace(user)
-			if user == "" {
+		for _, entry := range validUsers {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
 				continue
 			}
 
-			recurseReadCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:u:%s:r-x", user), path)
-			if err := recurseReadCmd.Run(); err != nil {
-				return fmt.Errorf("Failed to set recursive ACLs for valid user %s: %v", user, err)
+			// Check if it's a group
+			if strings.HasPrefix(entry, "@") || strings.HasPrefix(entry, "+") {
+				// It's a group - remove the prefix
+				groupName := strings.TrimPrefix(strings.TrimPrefix(entry, "@"), "+")
+
+				// Set default ACLs for group
+				recurseGroupCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:g:%s:r-x", groupName), path)
+				if err := recurseGroupCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set recursive ACLs for valid group %s: %v", groupName, err)
+				}
+			} else {
+				// It's a user
+				recurseUserCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:u:%s:r-x", entry), path)
+				if err := recurseUserCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set recursive ACLs for valid user %s: %v", entry, err)
+				}
 			}
 		}
 	}
@@ -221,7 +273,7 @@ func getShareACLs(sharePath string) (ShareACLs, error) {
 		Entries: []ACLEntry{},
 	}
 
-	// Use getfacl to get the current ACLs (don't use --numeric to get usernames)
+	// Use getfacl to get the current ACLs
 	cmd := exec.Command("getfacl", "-p", sharePath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

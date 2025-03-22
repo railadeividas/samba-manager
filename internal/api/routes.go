@@ -107,6 +107,33 @@ func (h *APIHandler) registerRoutes() {
 		Handler: h.ChangePassword,
 	})
 
+	// Group routes
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/groups$`),
+		Method:  http.MethodGet,
+		Handler: h.GetGroups,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/groups/([^/]+)$`),
+		Method:  http.MethodPost,
+		Handler: h.CreateGroup,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/groups/([^/]+)$`),
+		Method:  http.MethodDelete,
+		Handler: h.DeleteGroup,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/groups/([^/]+)/users/([^/]+)$`),
+		Method:  http.MethodPost,
+		Handler: h.AddUserToGroup,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/groups/([^/]+)/users/([^/]+)$`),
+		Method:  http.MethodDelete,
+		Handler: h.RemoveUserFromGroup,
+	})
+
 	// Service routes
 	h.routes = append(h.routes, Route{
 		Pattern: regexp.MustCompile(`^/status$`),
