@@ -11,6 +11,10 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import FormHelperText from '@mui/material/FormHelperText';
 import Grid from '@mui/material/Grid';
+import Typography from '@mui/material/Typography';
+import Paper from '@mui/material/Paper';
+import InfoIcon from '@mui/icons-material/Info';
+import Box from '@mui/material/Box';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { createUpdateShare } from '../../services/sharesService';
@@ -72,6 +76,23 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
           {isEditMode ? 'Edit Share' : 'Add Share'}
         </DialogTitle>
         <DialogContent>
+          <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'info.50', display: 'flex', alignItems: 'flex-start' }}>
+            <InfoIcon color="info" sx={{ mr: 1, mt: 0.5 }} />
+            <Box>
+              <Typography variant="subtitle2" color="info.main" gutterBottom>
+                Access Control List (ACL) Settings
+              </Typography>
+              <Typography variant="body2">
+                The system will automatically set up Linux ACLs based on your "Valid Users" and "Write List" settings:
+              </Typography>
+              <Typography variant="body2" component="ul" sx={{ mt: 1, pl: 2 }}>
+                <li>Users in "Valid Users" will have read and execute permissions (r-x)</li>
+                <li>Users in "Write List" will have read, write, and execute permissions (rwx)</li>
+                <li>These permissions will be applied at the file system level</li>
+              </Typography>
+            </Box>
+          </Paper>
+
           <Grid container spacing={2} sx={{ mt: 1 }}>
             {/* Share name field */}
             <Grid item xs={12} md={6}>
@@ -190,7 +211,7 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                 value={formik.values['valid users']}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
-                helperText="Comma-separated list of users who can access this share"
+                helperText="Comma-separated list of users who can access this share (read & execute permissions)"
               />
             </Grid>
 
@@ -205,7 +226,7 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                 value={formik.values['write list']}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
-                helperText="Comma-separated list of users with write access"
+                helperText="Comma-separated list of users with write access (read, write & execute permissions)"
               />
             </Grid>
 

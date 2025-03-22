@@ -58,7 +58,13 @@ func (h *APIHandler) CreateUpdateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create directory if path provided
+	// Validate users in valid users and write list
+	if err := validateShareUsers(shareData); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Create directory if path provided and set up ACLs
 	err = createShareDirectory(shareData)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
@@ -227,15 +233,22 @@ func writeSambaConfig(shares SharesConfig) error {
 }
 
 // createShareDirectory creates the directory for a share if it doesn't exist
+// and sets up the appropriate ACLs based on valid users and write list
 func createShareDirectory(shareData Share) error {
 	path, exists := shareData["path"]
 	if !exists {
 		return nil // No path defined, nothing to create
 	}
 
+	// Create the directory with standard permissions
 	err := os.MkdirAll(path, 0755)
 	if err != nil {
 		return fmt.Errorf("Failed to create directory: %v", err)
+	}
+
+	// Set up ACLs based on "valid users" and "write list" parameters
+	if err := setupShareACL(shareData); err != nil {
+		return fmt.Errorf("Failed to set up ACLs: %v", err)
 	}
 
 	return nil

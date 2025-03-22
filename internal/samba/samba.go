@@ -237,14 +237,3 @@ func getSambaServiceStatus() (ServiceStatusResponse, error) {
 		Status:  map[bool]string{true: "running", false: "stopped"}[isActive],
 	}, nil
 }
-
-// restartSambaService restarts the Samba service
-func restartSambaService() error {
-	cmd := exec.Command("systemctl", "restart", "smbd")
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("Failed to restart service: %v", err)
-	}
-
-	return nil
-}
