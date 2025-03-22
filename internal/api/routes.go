@@ -134,6 +134,18 @@ func (h *APIHandler) registerRoutes() {
 		Handler: h.RemoveUserFromGroup,
 	})
 
+	// Raw Config routes
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/config/raw$`),
+		Method:  http.MethodGet,
+		Handler: h.GetRawConfig,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/config/raw$`),
+		Method:  http.MethodPost,
+		Handler: h.SaveRawConfig,
+	})
+
 	// Service routes
 	h.routes = append(h.routes, Route{
 		Pattern: regexp.MustCompile(`^/status$`),

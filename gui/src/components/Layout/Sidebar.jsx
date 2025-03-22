@@ -12,6 +12,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import FolderSharedIcon from '@mui/icons-material/FolderShared';
 import PeopleIcon from '@mui/icons-material/People';
 import GroupsIcon from '@mui/icons-material/Groups';
+import CodeIcon from '@mui/icons-material/Code';
 import { useApp } from '../../context/AppContext';
 
 const Sidebar = () => {
@@ -24,6 +25,7 @@ const Sidebar = () => {
     { text: 'Shares', icon: <FolderSharedIcon />, path: '/shares' },
     { text: 'Users', icon: <PeopleIcon />, path: '/users' },
     { text: 'Groups', icon: <GroupsIcon />, path: '/groups' },
+    { text: 'Raw Config', icon: <CodeIcon />, path: '/config' },
   ];
 
   const drawerWidth = sidebarOpen ? 240 : 64;
