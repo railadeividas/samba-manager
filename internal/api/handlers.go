@@ -36,10 +36,11 @@ type UserListResponse struct {
 
 // ServiceStatusResponse represents the Samba service status
 type ServiceStatusResponse struct {
-	Service string `json:"service"`
-	Active  bool   `json:"active"`
-	Status  string `json:"status"`
-	Error   string `json:"error,omitempty"`
+	Service  string                 `json:"service"`
+	Active   bool                   `json:"active"`
+	Status   string                 `json:"status"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Error    string                 `json:"error,omitempty"`
 }
 
 // PasswordRequest represents a password change request
