@@ -81,8 +81,27 @@ const SharesPage = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">
+      <Box sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        mb: 2,
+        pb: 1,
+        borderBottom: '1px solid rgba(0, 0, 0, 0.08)'
+      }}>
+        <Typography
+          variant="h4"
+          sx={{
+            fontWeight: 600,
+            background: (theme) =>
+              theme.palette.mode === 'dark'
+                ? 'linear-gradient(45deg, #90caf9 10%, #64b5f6 90%)'
+                : 'linear-gradient(45deg, #2196f3 30%, #1976d2 90%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            mr: 2
+          }}
+        >
           Shares
         </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>

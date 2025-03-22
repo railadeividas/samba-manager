@@ -5,41 +5,17 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import Button from '@mui/material/Button';
 import MenuIcon from '@mui/icons-material/Menu';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import LogoutIcon from '@mui/icons-material/Logout';
-import Chip from '@mui/material/Chip';
-import CircleIcon from '@mui/icons-material/Circle';
-import Tooltip from '@mui/material/Tooltip';
 import Box from '@mui/material/Box';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { useNotification } from '../../context/NotificationContext';
-import { restartService, getServiceStatus } from '../../services/serviceStatus';
 import ThemeToggle from '../ThemeToggle';
 
 const Header = () => {
-  const { toggleSidebar, serviceStatus, setServiceStatus } = useApp();
+  const { toggleSidebar } = useApp();
   const { showNotification } = useNotification();
   const { logout } = useAuth();
-
-  const handleRestartService = async () => {
-    try {
-      await restartService();
-      showNotification('Service restarted successfully', 'success');
-
-      // Update service status after a delay
-      setTimeout(async () => {
-        try {
-          const status = await getServiceStatus();
-          setServiceStatus(status);
-        } catch (error) {
-          console.error('Failed to get service status:', error);
-        }
-      }, 2000);
-    } catch (error) {
-      showNotification(`Failed to restart service: ${error.message}`, 'error');
-    }
-  };
 
   const handleLogout = () => {
     logout();
@@ -68,31 +44,9 @@ const Header = () => {
           Samba Manager
         </Typography>
 
-        <Chip
-          icon={<CircleIcon fontSize="small" color={serviceStatus.active ? 'success' : 'error'} />}
-          label={`Status: ${serviceStatus.status}`}
-          variant="outlined"
-          sx={{
-            color: 'inherit',
-            borderColor: 'rgba(255, 255, 255, 0.3)',
-            mr: 2
-          }}
-        />
-
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           {/* Theme Toggle Button */}
           <ThemeToggle />
-
-          <Tooltip title="Restart Service">
-            <IconButton
-              color="inherit"
-              aria-label="restart service"
-              onClick={handleRestartService}
-              sx={{ mr: 1 }}
-            >
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
 
           <Button
             color="inherit"
