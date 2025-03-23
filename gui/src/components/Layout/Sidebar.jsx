@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Drawer from '@mui/material/Drawer';
 import List from '@mui/material/List';
@@ -14,9 +14,15 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import FolderSharedIcon from '@mui/icons-material/FolderShared';
 import PeopleIcon from '@mui/icons-material/People';
 import GroupsIcon from '@mui/icons-material/Groups';
+import SettingsIcon from '@mui/icons-material/Settings';
+import TuneIcon from '@mui/icons-material/Tune';
+import HomeIcon from '@mui/icons-material/Home';
 import CodeIcon from '@mui/icons-material/Code';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useApp } from '../../context/AppContext';
+import Collapse from '@mui/material/Collapse';
 
 // Import version from package.json
 import packageInfo from '../../../package.json';
@@ -29,16 +35,36 @@ const Sidebar = () => {
   const { sidebarOpen } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const menuItems = [
+  // Check if we're in any settings page
+  const isInSettingsSection = ['/settings/homes', '/settings/global', '/settings/advanced'].includes(location.pathname);
+
+  // Auto-open settings section if we're in a settings page
+  React.useEffect(() => {
+    if (isInSettingsSection && !settingsOpen) {
+      setSettingsOpen(true);
+    }
+  }, [location.pathname, isInSettingsSection, settingsOpen]);
+
+  const mainMenuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Shares', icon: <FolderSharedIcon />, path: '/shares' },
     { text: 'Users', icon: <PeopleIcon />, path: '/users' },
     { text: 'Groups', icon: <GroupsIcon />, path: '/groups' },
-    { text: 'Raw Config', icon: <CodeIcon />, path: '/config' },
+  ];
+
+  const settingsMenuItems = [
+    { text: 'User Homes', icon: <HomeIcon />, path: '/settings/homes' },
+    { text: 'Global & Printers', icon: <TuneIcon />, path: '/settings/global' },
+    { text: 'Advanced Editor', icon: <CodeIcon />, path: '/settings/advanced' },
   ];
 
   const drawerWidth = sidebarOpen ? 240 : 64;
+
+  const handleSettingsClick = () => {
+    setSettingsOpen(!settingsOpen);
+  };
 
   return (
     <Drawer
@@ -64,7 +90,7 @@ const Sidebar = () => {
       <Toolbar /> {/* This creates space for the app bar */}
       <Divider />
       <List disablePadding sx={{ flexGrow: 1 }}>
-        {menuItems.map((item) => (
+        {mainMenuItems.map((item) => (
           <ListItem key={item.text} disablePadding>
             <ListItemButton
               selected={location.pathname === item.path}
@@ -94,6 +120,63 @@ const Sidebar = () => {
             </ListItemButton>
           </ListItem>
         ))}
+
+        {/* Settings Section */}
+        <ListItem disablePadding>
+          <ListItemButton
+            onClick={handleSettingsClick}
+            selected={isInSettingsSection}
+            sx={{
+              minHeight: 48,
+              justifyContent: sidebarOpen ? 'initial' : 'center',
+              px: 2.5,
+            }}
+          >
+            <ListItemIcon
+              sx={{
+                minWidth: 0,
+                mr: sidebarOpen ? 3 : 'auto',
+                justifyContent: 'center',
+              }}
+            >
+              <SettingsIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary="Settings"
+              sx={{
+                opacity: sidebarOpen ? 1 : 0,
+                whiteSpace: 'nowrap',
+              }}
+            />
+            {sidebarOpen && (settingsOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />)}
+          </ListItemButton>
+        </ListItem>
+
+        {/* Settings Sub-Menu */}
+        <Collapse in={settingsOpen && sidebarOpen} timeout="auto" unmountOnExit>
+          <List component="div" disablePadding>
+            {settingsMenuItems.map((item) => (
+              <ListItemButton
+                key={item.text}
+                selected={location.pathname === item.path}
+                onClick={() => navigate(item.path)}
+                sx={{
+                  pl: 4,
+                  py: 0.5,
+                  minHeight: 40,
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  {item.icon}
+                </ListItemIcon>
+                <ListItemText
+                  primary={item.text}
+                  primaryTypographyProps={{ fontSize: '0.875rem' }}
+                />
+              </ListItemButton>
+            ))}
+          </List>
+        </Collapse>
       </List>
 
       {/* Version information at the bottom */}

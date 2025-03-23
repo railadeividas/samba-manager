@@ -13,11 +13,14 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConnectionError from '../components/Common/ConnectionError';
 import UserList from '../components/Users/UserList';
 import UserForm from '../components/Users/UserForm';
+import PasswordForm from '../components/Users/PasswordForm'; // Import PasswordForm
 
 const UsersPage = () => {
   const location = useLocation();
   const { setUsers } = useApp();
   const [formOpen, setFormOpen] = useState(false);
+  const [passwordFormOpen, setPasswordFormOpen] = useState(false); // Add state for password form
+  const [selectedUser, setSelectedUser] = useState(null); // Add state for selected user
 
   // Use our custom hook for API data fetching
   const {
@@ -58,6 +61,24 @@ const UsersPage = () => {
 
   const handleRefresh = () => {
     fetchUsers(true);
+  };
+
+  // Add handler for password change
+  const handleChangePassword = (username) => {
+    setSelectedUser(username);
+    setPasswordFormOpen(true);
+  };
+
+  // Add handler for password form close
+  const handlePasswordFormClose = () => {
+    setPasswordFormOpen(false);
+    setSelectedUser(null);
+  };
+
+  // Add handler for password form submit
+  const handlePasswordFormSubmit = () => {
+    fetchUsers(true);
+    handlePasswordFormClose();
   };
 
   // If there's a connection error, show the ConnectionError component
@@ -133,6 +154,7 @@ const UsersPage = () => {
           users={usersData?.users || []}
           onRefresh={handleRefresh}
           loading={loading}
+          onChangePassword={handleChangePassword} // Pass the handler to UserList
         />
       )}
 
@@ -141,6 +163,15 @@ const UsersPage = () => {
           open={formOpen}
           onSubmit={handleFormSubmit}
           onClose={handleFormClose}
+        />
+      )}
+
+      {passwordFormOpen && selectedUser && (
+        <PasswordForm
+          open={passwordFormOpen}
+          username={selectedUser}
+          onSubmit={handlePasswordFormSubmit}
+          onClose={handlePasswordFormClose}
         />
       )}
     </Box>

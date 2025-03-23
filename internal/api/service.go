@@ -106,9 +106,9 @@ func getSambaServiceStatus() (ServiceStatusResponse, error) {
 // restartSambaService restarts the Samba service and refreshes ACLs
 func restartSambaService() error {
 	// Refresh ACLs first
-	if err := refreshShareACLs(); err != nil {
-		return fmt.Errorf("Failed to refresh ACLs: %v", err)
-	}
+	// if err := refreshShareACLs(); err != nil {
+	// 	return fmt.Errorf("Failed to refresh ACLs: %v", err)
+	// }
 
 	// Then restart the service
 	cmd := exec.Command("systemctl", "restart", "smbd")
