@@ -19,28 +19,51 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ConfirmDialog from '../Common/ConfirmDialog';
 import LoadingSpinner from '../Common/LoadingSpinner';
 import ConnectionError from '../Common/ConnectionError';
+import ParamAutocomplete from './ParamAutocomplete';
 import { getSection, updateSection } from '../../services/configService';
 import { useApi } from '../../services/useApi';
 import { useNotification } from '../../context/NotificationContext';
+import { getParameterDescription } from '../../utils/sambaParameters';
+
+/**
+ * Creates a tooltip content with description and examples
+ * @param {string} paramName - Parameter name
+ * @returns {React.ReactNode} - Tooltip content
+ */
+const ParameterTooltip = ({ paramName }) => {
+  const paramInfo = getParameterDescription(paramName);
+
+  if (!paramInfo) {
+    return <Typography>No description available</Typography>;
+  }
+
+  return (
+    <Box sx={{ maxWidth: 300 }}>
+      <Typography variant="body2" gutterBottom>{paramInfo.description}</Typography>
+
+      {paramInfo.examples && paramInfo.examples.length > 0 && (
+        <>
+          <Typography variant="caption" sx={{ fontWeight: 'bold', mt: 1, display: 'block' }}>
+            Examples:
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2 }}>
+            {paramInfo.examples.map((example, index) => (
+              <Typography key={index} component="li" variant="caption" sx={{ fontFamily: 'monospace' }}>
+                {example}
+              </Typography>
+            ))}
+          </Box>
+        </>
+      )}
+    </Box>
+  );
+};
 
 /**
  * Reusable component for editing any Samba configuration section
- *
- * @param {Object} props
- * @param {string} props.sectionName - Name of the section to edit (e.g., 'global', 'homes')
- * @param {Object} props.paramDescriptions - Object with parameter descriptions for tooltips
- * @param {string} props.title - Title to display at the top of the editor
- * @param {string} props.description - Optional description text
- * @param {function} props.onSaved - Optional callback for when save is successful
- * @param {React.ReactNode} props.headerContent - Optional content to display in the header
- * @param {React.ReactNode} props.footerContent - Optional content to display in the footer
- * @param {React.ReactNode} props.renderCustomField - Optional function to render custom field UI
- * @param {boolean} props.disableParamRemoval - Optional flag to disable parameter removal
- * @param {boolean} props.disableParamAddition - Optional flag to disable parameter addition
  */
 const SectionEditor = ({
   sectionName,
-  paramDescriptions = {},
   title,
   description,
   onSaved,
@@ -97,6 +120,11 @@ const SectionEditor = ({
       setHasChanges(true);
       return updated;
     });
+  };
+
+  // New parameter key change handler with autocomplete
+  const handleNewParamKeyChange = (value) => {
+    setNewParam(prev => ({ ...prev, key: value || '' }));
   };
 
   // Add parameter handler
@@ -237,13 +265,14 @@ const SectionEditor = ({
                     size="small"
                     variant="outlined"
                   />
-                  {paramDescriptions[key] && (
-                    <Tooltip title={paramDescriptions[key]}>
-                      <IconButton size="small">
-                        <InfoIcon fontSize="small" color="info" />
-                      </IconButton>
-                    </Tooltip>
-                  )}
+                  <Tooltip
+                    title={<ParameterTooltip paramName={key} />}
+                    placement="right"
+                  >
+                    <IconButton size="small">
+                      <InfoIcon fontSize="small" color="info" />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
               </Grid>
               <Grid item xs={12} sm={7} md={8}>
@@ -276,15 +305,15 @@ const SectionEditor = ({
           {!disableParamAddition && (
             <Grid container item spacing={2} alignItems="center">
               <Grid item xs={12} sm={4} md={3}>
-                <TextField
-                  fullWidth
-                  label="New Parameter"
+                {/* Use ParamAutocomplete with centralized parameter data */}
+                <ParamAutocomplete
+                  sectionName={sectionName}
                   value={newParam.key}
-                  onChange={(e) => setNewParam(prev => ({ ...prev, key: e.target.value }))}
-                  placeholder="Enter parameter name"
-                  size="small"
-                  variant="outlined"
+                  onChange={handleNewParamKeyChange}
                   disabled={loading || saving}
+                  textFieldProps={{
+                    placeholder: "Enter or select parameter",
+                  }}
                 />
               </Grid>
               <Grid item xs={12} sm={7} md={8}>

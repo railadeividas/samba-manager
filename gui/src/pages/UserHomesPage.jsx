@@ -29,27 +29,12 @@ import InfoIcon from '@mui/icons-material/Info';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConnectionError from '../components/Common/ConnectionError';
+import ParamAutocomplete from '../components/Config/ParamAutocomplete';
 import { getSection, updateSection } from '../services/configService';
 import { getUsers } from '../services/usersService';
 import { useApi } from '../services/useApi';
 import { useNotification } from '../context/NotificationContext';
-
-// Common parameter descriptions for homes section
-const homesDescriptions = {
-  'browsable': 'Whether home directories are visible in network browsing (yes/no)',
-  'browseable': 'Whether home directories are visible in network browsing (yes/no)',
-  'read only': 'Whether home directories are read-only (yes/no)',
-  'create mask': 'Permission mask for new files in home directories',
-  'directory mask': 'Permission mask for new directories in home directories',
-  'valid users': 'List of users allowed to access their home directories',
-  'comment': 'Descriptive text about the home directories share',
-  'path': 'Path pattern for home directories (e.g., /home/%S or /home/%U)',
-  'guest ok': 'Whether guest access is allowed to home directories (yes/no)',
-  'writable': 'Whether home directories are writable (yes/no)',
-  'follow symlinks': 'Whether to follow symbolic links (yes/no)',
-  'wide links': 'Whether to allow links outside the share (yes/no)',
-  'hide dot files': 'Whether to hide dot files (yes/no)',
-};
+import { getParameterDescriptionText, getParameterDescription } from '../utils/sambaParameters';
 
 // Template configurations for quick setup
 const homeTemplates = {
@@ -197,6 +182,11 @@ const UserHomesPage = () => {
       setHasChanges(true);
       return updated;
     });
+  };
+
+  // New parameter key change handler with autocomplete
+  const handleNewParamKeyChange = (value) => {
+    setNewParam(prev => ({ ...prev, key: value || '' }));
   };
 
   // Add parameter handler
@@ -372,13 +362,35 @@ const UserHomesPage = () => {
                       size="small"
                       variant="outlined"
                     />
-                    {homesDescriptions[key] && (
-                      <Tooltip title={homesDescriptions[key]}>
-                        <IconButton size="small">
-                          <InfoIcon fontSize="small" color="info" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
+                    <Tooltip
+                      title={
+                        <Box sx={{ maxWidth: 300 }}>
+                          <Typography variant="body2" gutterBottom>
+                            {getParameterDescriptionText(key)}
+                          </Typography>
+
+                          {getParameterDescription(key)?.examples && (
+                            <>
+                              <Typography variant="caption" sx={{ fontWeight: 'bold', mt: 1, display: 'block' }}>
+                                Examples:
+                              </Typography>
+                              <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                                {getParameterDescription(key)?.examples.map((example, index) => (
+                                  <Typography key={index} component="li" variant="caption" sx={{ fontFamily: 'monospace' }}>
+                                    {example}
+                                  </Typography>
+                                ))}
+                              </Box>
+                            </>
+                          )}
+                        </Box>
+                      }
+                      placement="right"
+                    >
+                      <IconButton size="small">
+                        <InfoIcon fontSize="small" color="info" />
+                      </IconButton>
+                    </Tooltip>
                   </Box>
                 </Grid>
                 <Grid item xs={12} sm={7} md={8}>
@@ -427,15 +439,15 @@ const UserHomesPage = () => {
 
             <Grid container item spacing={2} alignItems="center">
               <Grid item xs={12} sm={4} md={3}>
-                <TextField
-                  fullWidth
-                  label="New Parameter"
+                {/* Use ParamAutocomplete with centralized parameter data */}
+                <ParamAutocomplete
+                  sectionName="homes"
                   value={newParam.key}
-                  onChange={(e) => setNewParam(prev => ({ ...prev, key: e.target.value }))}
-                  placeholder="Enter parameter name"
-                  size="small"
-                  variant="outlined"
+                  onChange={handleNewParamKeyChange}
                   disabled={saving}
+                  textFieldProps={{
+                    placeholder: "Enter or select parameter",
+                  }}
                 />
               </Grid>
               <Grid item xs={12} sm={7} md={8}>

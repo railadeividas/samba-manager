@@ -11,50 +11,6 @@ import PrintIcon from '@mui/icons-material/Print';
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
 import SectionEditor from '../components/Config/SectionEditor';
 
-// Common parameter descriptions
-const paramDescriptions = {
-  // Global section
-  'workgroup': 'NT domain name or workgroup name',
-  'server string': 'Descriptive text about the server',
-  'netbios name': 'The NetBIOS name of this server',
-  'security': 'Security mode (user, domain, ads)',
-  'map to guest': 'Mapping to guest account (never, bad user, bad password)',
-  'dns proxy': 'Whether to host NetBIOS names via DNS',
-  'log file': 'Path to log file',
-  'max log size': 'Maximum size of log file in KB',
-  'log level': 'Logging verbosity (0-10)',
-  'client min protocol': 'Minimum SMB protocol version (SMB1, SMB2, SMB3)',
-  'client max protocol': 'Maximum SMB protocol version (SMB1, SMB2, SMB3)',
-  'server min protocol': 'Minimum SMB protocol version for server',
-  'server max protocol': 'Maximum SMB protocol version for server',
-  'passdb backend': 'Password database backend (tdbsam, smbpasswd)',
-  'printing': 'Printing configuration (bsd, sysv, cups)',
-  'printcap name': 'Printcap file path or print system name',
-  'load printers': 'Whether to load printers automatically (yes/no)',
-  'encrypt passwords': 'Whether to use encrypted passwords (yes/no)',
-  'wins support': 'Whether this server acts as a WINS server (yes/no)',
-  'wins server': 'IP address of WINS server',
-  'name resolve order': 'Name resolution order (bcast, lmhosts, host, wins)',
-
-  // Printers section
-  'comment': 'Descriptive text about the share',
-  'path': 'Path to the share directory',
-  'browseable': 'Whether the share is visible (yes/no)',
-  'guest ok': 'Whether guest access is allowed (yes/no)',
-  'printable': 'Whether printing is enabled (yes/no)',
-  'print ok': 'Whether printing is enabled (yes/no)',
-  'printer admin': 'Users who can administer this printer',
-  'printer name': 'Name of the printer in the printing subsystem',
-  'use client driver': 'Whether to use client-side printer drivers (yes/no)',
-  'default devmode': 'Whether to use default device mode (yes/no)',
-
-  // Print$ section
-  'read only': 'Whether the share is read-only (yes/no)',
-  'write list': 'Users who can write to this share',
-  'create mask': 'File creation mask',
-  'directory mask': 'Directory creation mask',
-};
-
 // Tab panel component
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -177,7 +133,6 @@ const GlobalSettingsPage = () => {
           <TabPanel value={activeTab} index={0}>
             <SectionEditor
               sectionName="global"
-              paramDescriptions={paramDescriptions}
               title="Global Configuration Settings"
               description="These settings affect the overall behavior of the Samba server."
             />
@@ -187,7 +142,6 @@ const GlobalSettingsPage = () => {
           <TabPanel value={activeTab} index={1}>
             <SectionEditor
               sectionName="printers"
-              paramDescriptions={paramDescriptions}
               title="Printers Configuration Settings"
               description="These settings control how printers are shared on the network."
             />
@@ -197,7 +151,6 @@ const GlobalSettingsPage = () => {
           <TabPanel value={activeTab} index={2}>
             <SectionEditor
               sectionName="print$"
-              paramDescriptions={paramDescriptions}
               title="Print Drivers Configuration Settings"
               description="These settings control how printer drivers are shared on the network."
             />
