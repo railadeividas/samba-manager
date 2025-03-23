@@ -106,6 +106,11 @@ func (h *APIHandler) registerRoutes() {
 		Method:  http.MethodPost,
 		Handler: h.ChangePassword,
 	})
+	h.routes = append(h.routes, Route{
+    Pattern: regexp.MustCompile(`^/users/([^/]+)/home$`),
+    Method:  http.MethodPost,
+    Handler: h.CreateUserHomeDirectory,
+	})
 
 	// Group routes
 	h.routes = append(h.routes, Route{

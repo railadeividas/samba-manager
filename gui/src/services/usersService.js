@@ -56,3 +56,17 @@ export const changePassword = async (username, password) => {
     throw error;
   }
 };
+
+/**
+ * Create a home directory for a user
+ * @param {string} username - Username
+ * @returns {Promise<Object>} - Response
+ */
+export const createUserHomeDirectory = async (username) => {
+  try {
+    const response = await api.post(`/users/${username}/home`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};

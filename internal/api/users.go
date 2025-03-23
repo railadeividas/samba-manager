@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"os/user"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -175,6 +178,70 @@ func changeSambaPassword(username, password string) error {
 	err := cmd.Run()
 	if err != nil {
 		return fmt.Errorf("Failed to change password: %v", err)
+	}
+
+	return nil
+}
+
+// CreateUserHomeDirectory is the API handler for creating a user's home directory
+func (h *APIHandler) CreateUserHomeDirectory(w http.ResponseWriter, r *http.Request) {
+	username := getRouteParam(regexp.MustCompile(`^/users/([^/]+)/home$`), r.URL.Path, 1)
+
+	err := createUserHomeDirectory(username)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Status:  "success",
+		Message: fmt.Sprintf("Home directory created for user %s", username),
+	})
+}
+
+// createUserHomeDirectory creates a home directory for the specified user
+func createUserHomeDirectory(username string) error {
+	// Verify the user exists
+	_, err := user.Lookup(username)
+	if err != nil {
+		return fmt.Errorf("User %s does not exist", username)
+	}
+
+	// Construct the full path for the user's home directory
+	homePath := fmt.Sprintf("/home/%s", username)
+
+	// Check if home directory already exists
+	if _, err := os.Stat(homePath); err == nil {
+		return fmt.Errorf("Home directory for user %s already exists", username)
+	}
+
+	// Create the home directory with appropriate permissions
+	// 0755 means rwxr-xr-x (owner can read/write/execute, group and others can read/execute)
+	err = os.MkdirAll(homePath, 0755)
+	if err != nil {
+		return fmt.Errorf("Failed to create home directory for user %s: %v", username, err)
+	}
+
+	// Change ownership of the directory to the new user
+	userInfo, err := user.Lookup(username)
+	if err != nil {
+		return fmt.Errorf("Failed to lookup user information for %s: %v", username, err)
+	}
+
+	uid, err := strconv.Atoi(userInfo.Uid)
+	if err != nil {
+		return fmt.Errorf("Failed to convert user ID to integer: %v", err)
+	}
+
+	gid, err := strconv.Atoi(userInfo.Gid)
+	if err != nil {
+		return fmt.Errorf("Failed to convert group ID to integer: %v", err)
+	}
+
+	err = os.Chown(homePath, uid, gid)
+	if err != nil {
+		return fmt.Errorf("Failed to set ownership of home directory for user %s: %v", username, err)
 	}
 
 	return nil

@@ -7,22 +7,27 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 import KeyIcon from '@mui/icons-material/Key';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
+import FolderIcon from '@mui/icons-material/Folder';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Avatar from '@mui/material/Avatar';
 import LinearProgress from '@mui/material/LinearProgress';
-import { deleteUser } from '../../services/usersService';
+import { deleteUser, createUserHomeDirectory } from '../../services/usersService';
 import { useNotification } from '../../context/NotificationContext';
 import ConfirmDialog from '../Common/ConfirmDialog';
 
 const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
   const { showNotification } = useNotification();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmHomeDir, setConfirmHomeDir] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
+  const [userToCreateHomeDir, setUserToCreateHomeDir] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [creatingHomeDir, setCreatingHomeDir] = useState(false);
 
   const handleChangePasswordClick = (username) => {
     onChangePassword(username);
@@ -31,6 +36,33 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
   const handleDeleteClick = (username) => {
     setUserToDelete(username);
     setConfirmDelete(true);
+  };
+
+  const handleCreateHomeDirClick = (username) => {
+    setUserToCreateHomeDir(username);
+    setConfirmHomeDir(true);
+  };
+
+  const handleConfirmCreateHomeDirectory = async () => {
+    if (!userToCreateHomeDir) return;
+
+    setCreatingHomeDir(true);
+    try {
+      await createUserHomeDirectory(userToCreateHomeDir);
+      showNotification(`Home directory created for user "${userToCreateHomeDir}"`, 'success');
+      onRefresh();
+    } catch (error) {
+      showNotification(`Failed to create home directory: ${error.message}`, 'error');
+    } finally {
+      setConfirmHomeDir(false);
+      setUserToCreateHomeDir(null);
+      setCreatingHomeDir(false);
+    }
+  };
+
+  const handleCancelCreateHomeDirectory = () => {
+    setConfirmHomeDir(false);
+    setUserToCreateHomeDir(null);
   };
 
   const handleConfirmDelete = async () => {
@@ -97,22 +129,36 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
                 </TableCell>
                 <TableCell>Samba User</TableCell>
                 <TableCell align="right">
-                  <IconButton
-                    aria-label="change password"
-                    color="primary"
-                    onClick={() => handleChangePasswordClick(username)}
-                    disabled={loading || deleting}
-                  >
-                    <KeyIcon />
-                  </IconButton>
-                  <IconButton
-                    aria-label="delete"
-                    color="error"
-                    onClick={() => handleDeleteClick(username)}
-                    disabled={loading || deleting}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+                  <Tooltip title="Create Home Directory">
+                    <IconButton
+                      aria-label="create home directory"
+                      color="secondary"
+                      onClick={() => handleCreateHomeDirClick(username)}
+                      disabled={loading || deleting || creatingHomeDir}
+                    >
+                      <FolderIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Change Password">
+                    <IconButton
+                      aria-label="change password"
+                      color="primary"
+                      onClick={() => handleChangePasswordClick(username)}
+                      disabled={loading || deleting || creatingHomeDir}
+                    >
+                      <KeyIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete User">
+                    <IconButton
+                      aria-label="delete"
+                      color="error"
+                      onClick={() => handleDeleteClick(username)}
+                      disabled={loading || deleting || creatingHomeDir}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
                 </TableCell>
               </TableRow>
             ))}
@@ -128,6 +174,17 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
         confirmColor="error"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+      />
+
+      <ConfirmDialog
+        open={confirmHomeDir}
+        title="Create Home Directory"
+        message={`Are you sure you want to create a home directory for user "${userToCreateHomeDir}"?`}
+        confirmText="Create"
+        confirmColor="secondary"
+        onConfirm={handleConfirmCreateHomeDirectory}
+        onCancel={handleCancelCreateHomeDirectory}
+        disableConfirm={creatingHomeDir}
       />
     </>
   );

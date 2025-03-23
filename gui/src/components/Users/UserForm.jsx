@@ -6,9 +6,12 @@ import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Grid from '@mui/material/Grid';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { createUser } from '../../services/usersService';
+import { createUserHomeDirectory } from '../../services/usersService';
 import { useNotification } from '../../context/NotificationContext';
 
 const UserForm = ({ open, onSubmit, onClose }) => {
@@ -25,7 +28,8 @@ const UserForm = ({ open, onSubmit, onClose }) => {
       .min(6, 'Password must be at least 6 characters'),
     confirmPassword: Yup.string()
       .required('Please confirm your password')
-      .oneOf([Yup.ref('password'), null], 'Passwords must match')
+      .oneOf([Yup.ref('password'), null], 'Passwords must match'),
+    createHomeDirectory: Yup.boolean()
   });
 
   // Initialize form with default values
@@ -33,12 +37,20 @@ const UserForm = ({ open, onSubmit, onClose }) => {
     initialValues: {
       username: '',
       password: '',
-      confirmPassword: ''
+      confirmPassword: '',
+      createHomeDirectory: false
     },
     validationSchema,
     onSubmit: async (values) => {
       try {
+        // Create user
         await createUser(values.username, values.password);
+
+        // Optionally create home directory
+        if (values.createHomeDirectory) {
+          await createUserHomeDirectory(values.username);
+        }
+
         showNotification(`User "${values.username}" created successfully`, 'success');
         onSubmit();
       } catch (error) {
@@ -110,6 +122,21 @@ const UserForm = ({ open, onSubmit, onClose }) => {
                 error={formik.touched.confirmPassword && Boolean(formik.errors.confirmPassword)}
                 helperText={formik.touched.confirmPassword && formik.errors.confirmPassword}
                 required
+              />
+            </Grid>
+
+            {/* Create Home Directory checkbox */}
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    id="createHomeDirectory"
+                    name="createHomeDirectory"
+                    checked={formik.values.createHomeDirectory}
+                    onChange={formik.handleChange}
+                  />
+                }
+                label="Create Home Directory"
               />
             </Grid>
           </Grid>
