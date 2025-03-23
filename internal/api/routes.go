@@ -134,7 +134,27 @@ func (h *APIHandler) registerRoutes() {
 		Handler: h.RemoveUserFromGroup,
 	})
 
-	// Raw Config routes
+	// Unified Configuration API
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/config$`),
+		Method:  http.MethodGet,
+		Handler: h.GetConfig,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/config$`),
+		Method:  http.MethodPost,
+		Handler: h.UpdateConfig,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/config/sections/([^/]+)$`),
+		Method:  http.MethodGet,
+		Handler: h.GetSection,
+	})
+	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/config/sections/([^/]+)$`),
+		Method:  http.MethodPost,
+		Handler: h.UpdateSection,
+	})
 	h.routes = append(h.routes, Route{
 		Pattern: regexp.MustCompile(`^/config/raw$`),
 		Method:  http.MethodGet,

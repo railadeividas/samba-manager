@@ -1,15 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Button, Paper, Divider, CircularProgress, Alert } from '@mui/material';
+import {
+  Box,
+  Typography,
+  Button,
+  Paper,
+  Divider,
+  CircularProgress,
+  Alert
+} from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConnectionError from '../components/Common/ConnectionError';
-import { getRawConfig, saveRawConfig } from '../services/rawConfigService';
+import { getRawConfig, saveRawConfig } from '../services/configService';
 import { useApi } from '../services/useApi';
 import { useNotification } from '../context/NotificationContext';
 
-const RawConfigPage = () => {
+const AdvancedConfigurationPage = () => {
   const { showNotification } = useNotification();
   const [configContent, setConfigContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
@@ -20,22 +28,22 @@ const RawConfigPage = () => {
 
   // Use our custom hook for API data fetching
   const {
-    data: configData,
+    data: rawConfigData,
     loading,
     error,
     isConnectionError,
-    fetchData: fetchConfig,
+    fetchData: fetchRawConfig,
     forceRetry
   } = useApi(getRawConfig);
 
   // Update content when data changes
   useEffect(() => {
-    if (configData && configData.content !== undefined) {
-      setConfigContent(configData.content);
-      setOriginalContent(configData.content);
+    if (rawConfigData && rawConfigData.content !== undefined) {
+      setConfigContent(rawConfigData.content);
+      setOriginalContent(rawConfigData.content);
       setHasChanges(false);
     }
-  }, [configData]);
+  }, [rawConfigData]);
 
   const handleContentChange = (e) => {
     setConfigContent(e.target.value);
@@ -43,7 +51,7 @@ const RawConfigPage = () => {
   };
 
   const handleRefresh = () => {
-    fetchConfig(true);
+    fetchRawConfig(true);
   };
 
   const handleSave = async () => {
@@ -59,7 +67,6 @@ const RawConfigPage = () => {
       console.error('Failed to save configuration:', error);
 
       if (error.isConnectionError) {
-        // Handle connection error
         showNotification('Connection failed. Unable to save configuration.', 'error');
       } else {
         showNotification(`Failed to save configuration: ${error.message || 'Something went wrong'}`, 'error');
@@ -67,8 +74,11 @@ const RawConfigPage = () => {
 
       setSaveError(error.message || 'Failed to save configuration');
     } finally {
-      setSaving(false);
-      setConfirmOpen(false);
+      // Delay resetting the saving state to ensure UI feedback
+      setTimeout(() => {
+        setSaving(false);
+        setConfirmOpen(false);
+      }, 500);
     }
   };
 
@@ -100,7 +110,7 @@ const RawConfigPage = () => {
             mr: 2
           }}
         >
-          Raw Configuration
+          Advanced Configuration
         </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
@@ -153,12 +163,12 @@ const RawConfigPage = () => {
         </Typography>
         <Typography variant="body2">
           Editing the raw Samba configuration file directly can cause issues if not done correctly.
-          It's recommended to use the Shares, Users, and Groups interfaces for most configuration tasks.
+          It's recommended to use the Settings and Homes interfaces for most configuration tasks.
           Changes made here will restart the Samba service.
         </Typography>
       </Paper>
 
-      {loading && !configData ? (
+      {loading && !configContent ? (
         <LoadingSpinner message="Loading configuration..." />
       ) : (
         <Paper
@@ -177,23 +187,24 @@ const RawConfigPage = () => {
           </Typography>
           <Divider sx={{ mb: 2 }} />
 
-          {/* Using a plain textarea for better control */}
-          <textarea
-            value={configContent}
-            onChange={handleContentChange}
-            style={{
-              flex: '1',
-              minHeight: '400px',
-              padding: '12px',
-              fontFamily: 'monospace',
-              fontSize: '0.9rem',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              resize: 'vertical',
-              overflow: 'auto'
-            }}
-            disabled={loading || saving}
-          />
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <textarea
+              value={configContent}
+              onChange={handleContentChange}
+              style={{
+                flex: '1',
+                minHeight: '400px',
+                padding: '12px',
+                fontFamily: 'monospace',
+                fontSize: '0.9rem',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                resize: 'vertical',
+                overflow: 'auto'
+              }}
+              disabled={loading || saving}
+            />
+          </Box>
         </Paper>
       )}
 
@@ -201,13 +212,15 @@ const RawConfigPage = () => {
         open={confirmOpen}
         title="Save Configuration"
         message="Are you sure you want to save changes to the Samba configuration? This will restart the Samba service and could affect active connections."
-        confirmText="Save & Restart"
+        confirmText={saving ? "Saving..." : "Save & Restart"}
         confirmColor="warning"
         onConfirm={handleSave}
-        onCancel={() => setConfirmOpen(false)}
+        onCancel={() => !saving && setConfirmOpen(false)}
+        disableConfirm={saving}
+        disableCancel={saving}
       />
     </Box>
   );
 };
 
-export default RawConfigPage;
+export default AdvancedConfigurationPage;

@@ -4,7 +4,10 @@ import DashboardPage from './pages/DashboardPage';
 import SharesPage from './pages/SharesPage';
 import UsersPage from './pages/UsersPage';
 import GroupsPage from './pages/GroupsPage';
-import RawConfigPage from './pages/RawConfigPage';
+import GlobalSettingsPage from './pages/GlobalSettingsPage';
+import UserHomesPage from './pages/UserHomesPage';
+import AdvancedConfigurationPage from './pages/AdvancedConfigurationPage';
+
 import LoginPage from './pages/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/AuthContext';
@@ -23,7 +26,9 @@ function App() {
         <Route path="/shares" element={<SharesPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/groups" element={<GroupsPage />} />
-        <Route path="/config" element={<RawConfigPage />} />
+        <Route path="/settings/homes" element={<UserHomesPage />} />
+        <Route path="/settings/global" element={<GlobalSettingsPage />} />
+        <Route path="/settings/advanced" element={<AdvancedConfigurationPage />} />
       </Route>
 
       {/* Redirect Routes */}
