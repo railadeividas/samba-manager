@@ -28,6 +28,7 @@ import { createUpdateShare } from '../../services/configService';
 import { getUsers } from '../../services/usersService';
 import { getGroups } from '../../services/groupsService';
 import { useNotification } from '../../context/NotificationContext';
+import api from '../../services/api';
 
 const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
   const { showNotification } = useNotification();
@@ -120,8 +121,13 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
       'guest ok': shareData?.['guest ok'] || 'no',
       'valid users': shareData?.['valid users'] || '',
       'write list': shareData?.['write list'] || '',
-      'create mask': shareData?.['create mask'] || '0744',
-      'directory mask': shareData?.['directory mask'] || '0755'
+      'create mask': shareData?.['create mask'] || '0664',
+      'directory mask': shareData?.['directory mask'] || '2775',
+      'force user': shareData?.['force user'] || '',
+      'force group': shareData?.['force group'] || '',
+      owner: shareData?.owner || '',
+      group: shareData?.group || '',
+      permissions: shareData?.permissions || '0755'
     },
     validationSchema,
     onSubmit: async (values) => {
@@ -137,19 +143,34 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
           .map(item => item.value)
           .join(', ');
 
+        // Create share configuration object
         const shareConfig = {
-          ...values,
+          path: values.path,
+          comment: values.comment,
+          browseable: values.browseable,
+          'read only': values['read only'],
+          'guest ok': values['guest ok'],
           'valid users': validUsersStr,
           'write list': writeListStr,
+          'create mask': values['create mask'],
+          'directory mask': values['directory mask'],
+          'force user': values['force user'],
+          'force group': values['force group']
         };
 
-        delete shareConfig.name;
-
+        // First, update the share configuration
         await createUpdateShare(shareName, shareConfig);
+
+        // Then, create the share directory and set up ACLs
+        await api.post(`/shares/${shareName}`, shareConfig);
+
+        // Show success message with details about what was done
         showNotification(
-          `Share "${shareName}" ${isEditMode ? 'updated' : 'created'} successfully`,
+          `Share "${shareName}" ${isEditMode ? 'updated' : 'created'} successfully. Directory created and ACLs set up.`,
           'success'
         );
+
+        // Refresh the shares list
         onSubmit();
       } catch (error) {
         showNotification(`Failed to ${isEditMode ? 'update' : 'create'} share: ${error.message}`, 'error');
@@ -222,11 +243,15 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                 Access Control List (ACL) Settings
               </Typography>
               <Typography variant="body2">
-                The system will automatically set up Linux ACLs based on your "Valid Users" and "Write List" settings:
+                The system will automatically:
               </Typography>
               <Typography variant="body2" component="ul" sx={{ mt: 1, pl: 2 }}>
-                <li>Users and groups in "Valid Users" will have read and execute permissions (r-x)</li>
-                <li>Users and groups in "Write List" will have read, write, and execute permissions (rwx)</li>
+                <li>Create the share directory if it doesn't exist</li>
+                <li>Set up Linux ACLs based on your "Valid Users" and "Write List" settings:</li>
+                <li style={{ marginLeft: '1.5rem' }}>• Users and groups in "Valid Users" will have read and execute permissions (r-x)</li>
+                <li style={{ marginLeft: '1.5rem' }}>• Users and groups in "Write List" will have read, write, and execute permissions (rwx)</li>
+                <li>Apply these permissions recursively to all files and directories</li>
+                <li>Set default ACLs for new files and directories</li>
                 <li>Use groups (prefixed with @) to give multiple users the same permissions</li>
               </Typography>
             </Box>
@@ -265,6 +290,63 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                 error={formik.touched.path && Boolean(formik.errors.path)}
                 helperText={formik.touched.path && formik.errors.path}
                 required
+              />
+            </Grid>
+
+            {/* Owner field */}
+            <Grid item xs={12} md={4}>
+              <Autocomplete
+                id="owner"
+                options={users}
+                value={formik.values.owner}
+                onChange={(_, newValue) => {
+                  formik.setFieldValue('owner', newValue || '');
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Owner"
+                    helperText="Set the owner of the share directory"
+                  />
+                )}
+              />
+            </Grid>
+
+            {/* Group field */}
+            <Grid item xs={12} md={4}>
+              <Autocomplete
+                id="group"
+                options={groups.map(group => group.name)}
+                value={formik.values.group}
+                onChange={(_, newValue) => {
+                  formik.setFieldValue('group', newValue || '');
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Group"
+                    helperText="Set the group of the share directory"
+                  />
+                )}
+              />
+            </Grid>
+
+            {/* Permissions field */}
+            <Grid item xs={12} md={4}>
+              <TextField
+                fullWidth
+                id="permissions"
+                name="permissions"
+                label="Permissions"
+                variant="outlined"
+                value={formik.values.permissions}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
+                helperText="Set the permissions of the share directory (e.g., 0755)"
+                inputProps={{
+                  pattern: "[0-7]{4}",
+                  title: "Please enter a valid octal permission (e.g., 0755)"
+                }}
               />
             </Grid>
 
@@ -430,6 +512,44 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
                 helperText="Permissions mask for new directories (e.g., 0755)"
+              />
+            </Grid>
+
+            {/* Force user field */}
+            <Grid item xs={12} md={6}>
+              <Autocomplete
+                id="force user"
+                options={users}
+                value={formik.values['force user']}
+                onChange={(_, newValue) => {
+                  formik.setFieldValue('force user', newValue || '');
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Force User"
+                    helperText="All files created will be owned by this user"
+                  />
+                )}
+              />
+            </Grid>
+
+            {/* Force group field */}
+            <Grid item xs={12} md={6}>
+              <Autocomplete
+                id="force group"
+                options={groups.map(group => group.name)}
+                value={formik.values['force group']}
+                onChange={(_, newValue) => {
+                  formik.setFieldValue('force group', newValue || '');
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Force Group"
+                    helperText="All files created will be owned by this group"
+                  />
+                )}
               />
             </Grid>
           </Grid>

@@ -15,12 +15,6 @@ const (
 	SMB_USER_LIST_CMD = "pdbedit"
 )
 
-// Share represents a Samba share configuration
-type Share map[string]string
-
-// SharesConfig represents all shares in the Samba configuration
-type SharesConfig map[string]Share
-
 // APIResponse represents a standard API response
 type APIResponse struct {
 	Status  string `json:"status,omitempty"`
