@@ -6,7 +6,7 @@ import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { getShares } from '../services/sharesService';
+import { getShares } from '../services/configService';
 import { getShareSizes } from '../services/storageService';
 import { useApp } from '../context/AppContext';
 import { useApi } from '../services/useApi';

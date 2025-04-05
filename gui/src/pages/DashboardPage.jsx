@@ -10,7 +10,7 @@ import Divider from '@mui/material/Divider';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { getShares } from '../services/sharesService';
+import { getShares } from '../services/configService';
 import { getUsers } from '../services/usersService';
 import { GetFileSystemSizes } from '../services/storageService';
 import { restartService, getServiceStatus } from '../services/serviceStatus';

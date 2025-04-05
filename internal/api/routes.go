@@ -161,6 +161,11 @@ func (h *APIHandler) registerRoutes() {
 		Handler: h.UpdateSection,
 	})
 	h.routes = append(h.routes, Route{
+		Pattern: regexp.MustCompile(`^/config/sections/([^/]+)$`),
+		Method:  http.MethodDelete,
+		Handler: h.DeleteSection,
+	})
+	h.routes = append(h.routes, Route{
 		Pattern: regexp.MustCompile(`^/config/raw$`),
 		Method:  http.MethodGet,
 		Handler: h.GetRawConfig,

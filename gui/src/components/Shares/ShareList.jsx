@@ -24,7 +24,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CommentIcon from '@mui/icons-material/Comment';
-import { deleteShare } from '../../services/sharesService';
+import { deleteSection } from '../../services/configService';
 import { useNotification } from '../../context/NotificationContext';
 import ConfirmDialog from '../Common/ConfirmDialog';
 import ShareUsage from './ShareUsage';
@@ -61,7 +61,7 @@ const ShareList = ({ shares, onEdit, onRefresh, loading, sharesSizeData }) => {
 
     setDeleteLoading(true);
     try {
-      await deleteShare(shareToDelete.name);
+      await deleteSection(shareToDelete.name);
       showNotification(`Share "${shareToDelete.name}" deleted successfully`, 'success');
       onRefresh();
     } catch (error) {
@@ -262,7 +262,16 @@ const ShareList = ({ shares, onEdit, onRefresh, loading, sharesSizeData }) => {
       <ConfirmDialog
         open={deleteDialogOpen}
         title="Delete Share"
-        content={`Are you sure you want to delete the share "${shareToDelete?.name}"? This will not delete the actual data on the filesystem.`}
+        message={
+          <>
+            <Typography variant="body1" gutterBottom>
+              Are you sure you want to delete the share "{shareToDelete?.name}"?
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Note: This action will only remove the share configuration. The actual files and directories will remain intact on the filesystem.
+            </Typography>
+          </>
+        }
         confirmText="Delete"
         cancelText="Cancel"
         onConfirm={handleDeleteConfirm}

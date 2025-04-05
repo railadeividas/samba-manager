@@ -24,7 +24,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import LockIcon from '@mui/icons-material/Lock';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { createUpdateShare } from '../../services/sharesService';
+import { createUpdateShare } from '../../services/configService';
 import { getUsers } from '../../services/usersService';
 import { getGroups } from '../../services/groupsService';
 import { useNotification } from '../../context/NotificationContext';
