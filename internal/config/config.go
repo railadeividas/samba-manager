@@ -1,100 +1,127 @@
 package config
 
 import (
-	"encoding/json"
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
-// Config holds application configuration
+// Config represents the application configuration
 type Config struct {
-	SambaConfPath string `json:"samba_conf_path"`
-	Port          string `json:"port"`
-	Debug         bool   `json:"debug"`
-	Auth          struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Enabled  bool   `json:"enabled"`
-	} `json:"auth"`
+	// Manager configuration
+	Manager struct {
+		Port string `yaml:"port"` // Port to listen on
+		Host string `yaml:"host"` // Host to bind to
+	} `yaml:"manager"`
+
+	// Samba configuration
+	Samba struct {
+		ConfigPath string `yaml:"configPath"` // Path to smb.conf
+	} `yaml:"samba"`
+
+	// Authentication configuration
+	Auth struct {
+		Username string `yaml:"username"` // Basic auth username
+		Password string `yaml:"password"` // Basic auth password
+	} `yaml:"auth"`
 }
 
-const (
-	defaultConfigPath = "/etc/samba-manager/config.json"
-	defaultSambaConf  = "/etc/samba/smb.conf"
-	defaultPort       = "8080"
-)
+// DefaultConfig returns the default configuration
+func DefaultConfig() *Config {
+	cfg := &Config{}
 
-// LoadConfig loads configuration from file or environment variables
+	// Manager defaults
+	cfg.Manager.Port = "8080"
+	cfg.Manager.Host = "localhost"
+
+	// Samba defaults
+	cfg.Samba.ConfigPath = "/etc/samba/smb.conf"
+
+	// Auth defaults
+	cfg.Auth.Username = "admin"
+	cfg.Auth.Password = "admin"
+
+	return cfg
+}
+
+// LoadConfig loads configuration from file or returns defaults
 func LoadConfig() *Config {
-	cfg := &Config{
-		SambaConfPath: getEnv("SAMBA_CONF_PATH", defaultSambaConf),
-		Port:          getEnv("PORT", defaultPort),
-		Debug:         getEnv("DEBUG", "false") == "true",
-	}
-
-	// Set default auth values
-	cfg.Auth.Enabled = true
-	cfg.Auth.Username = getEnv("AUTH_USERNAME", "admin")
-	cfg.Auth.Password = getEnv("AUTH_PASSWORD", "admin")
-
-	// Try to load config from file
-	configPath := getEnv("CONFIG_PATH", defaultConfigPath)
-	if _, err := os.Stat(configPath); err == nil {
-		log.Printf("Loading configuration from %s", configPath)
-		if err := loadConfigFromFile(configPath, cfg); err != nil {
-			log.Printf("Error loading config file: %v, using defaults/env vars", err)
+	// Get config file path from environment or use default
+	configPath := os.Getenv("SAMBA_MANAGER_CONFIG")
+	if configPath == "" {
+		// Try to find config in common locations
+		possiblePaths := []string{
+			"/etc/samba-manager/config.yaml",
+			"./config.yaml",
+			filepath.Join(os.Getenv("HOME"), ".config/samba-manager/config.yaml"),
 		}
-	} else {
-		log.Printf("Config file not found at %s, using defaults/env vars", configPath)
-		// Create default config file if directory exists
-		if dir := filepath.Dir(configPath); dirExists(dir) {
-			if err := saveConfigToFile(configPath, cfg); err != nil {
-				log.Printf("Error saving default config: %v", err)
-			} else {
-				log.Printf("Created default config at %s", configPath)
+
+		for _, path := range possiblePaths {
+			if _, err := os.Stat(path); err == nil {
+				configPath = path
+				break
 			}
 		}
 	}
 
-	log.Printf("Configuration loaded: SambaConfPath=%s, Port=%s, Debug=%v, Auth.Enabled=%v",
-		cfg.SambaConfPath, cfg.Port, cfg.Debug, cfg.Auth.Enabled)
+	// If no config file found, return defaults
+	if configPath == "" {
+		return DefaultConfig()
+	}
+
+	// Load config from file
+	file, err := os.ReadFile(configPath)
+	if err != nil {
+		fmt.Printf("Warning: Could not read config file %s: %v\n", configPath, err)
+		return DefaultConfig()
+	}
+
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal(file, cfg); err != nil {
+		fmt.Printf("Warning: Could not parse config file %s: %v\n", configPath, err)
+		return DefaultConfig()
+	}
+
+	// Override with environment variables if set
+	if port := os.Getenv("SAMBA_MANAGER_PORT"); port != "" {
+		cfg.Manager.Port = port
+	}
+	if host := os.Getenv("SAMBA_MANAGER_HOST"); host != "" {
+		cfg.Manager.Host = host
+	}
+	if configPath := os.Getenv("SAMBA_CONFIG_PATH"); configPath != "" {
+		cfg.Samba.ConfigPath = configPath
+	}
+	if username := os.Getenv("SAMBA_MANAGER_USERNAME"); username != "" {
+		cfg.Auth.Username = username
+	}
+	if password := os.Getenv("SAMBA_MANAGER_PASSWORD"); password != "" {
+		cfg.Auth.Password = password
+	}
+
 	return cfg
 }
 
-// Load configuration from JSON file
-func loadConfigFromFile(path string, cfg *Config) error {
-	data, err := os.ReadFile(path)
+// SaveConfig saves the configuration to a file
+func SaveConfig(cfg *Config, path string) error {
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %v", err)
+	}
+
+	// Marshal config to YAML
+	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal config: %v", err)
 	}
 
-	return json.Unmarshal(data, cfg)
-}
-
-// Save configuration to JSON file
-func saveConfigToFile(path string, cfg *Config) error {
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
+	// Write to file
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %v", err)
 	}
 
-	return os.WriteFile(path, data, 0644)
-}
-
-// Check if directory exists
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
-}
-
-// getEnv gets an environment variable or returns the default
-func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
+	return nil
 }
