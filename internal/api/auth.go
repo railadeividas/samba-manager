@@ -8,27 +8,19 @@ import (
 type AuthConfig struct {
 	Username string
 	Password string
-	Enabled  bool
 }
 
 var authConfig AuthConfig
 
 // SetAuthConfig sets the authentication configuration
-func SetAuthConfig(username, password string, enabled bool) {
+func SetAuthConfig(username, password string) {
 	authConfig.Username = username
 	authConfig.Password = password
-	authConfig.Enabled = enabled
 }
 
 // BasicAuthMiddleware wraps an http.Handler with Basic Authentication
 func BasicAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth if disabled
-		if !authConfig.Enabled {
-			next.ServeHTTP(w, r)
-			return
-		}
-
 		// Get username and password from the request
 		username, password, ok := r.BasicAuth()
 

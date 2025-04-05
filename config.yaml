@@ -1,0 +1,10 @@
+manager:
+  port: "8080"
+  host: "localhost"
+
+samba:
+  configPath: "/etc/samba/smb.conf"
+
+auth:
+  username: "admin"
+  password: "admin"

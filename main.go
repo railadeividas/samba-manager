@@ -23,10 +23,10 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// Set config in API
-	api.SetConfigPath(cfg.SambaConfPath)
+	api.SetConfigPath(cfg.Samba.ConfigPath)
 
 	// Set auth config
-	api.SetAuthConfig(cfg.Auth.Username, cfg.Auth.Password, cfg.Auth.Enabled)
+	api.SetAuthConfig(cfg.Auth.Username, cfg.Auth.Password)
 
 	// Set up API handlers
 	apiHandler := api.NewAPIHandler()
@@ -66,7 +66,7 @@ func main() {
 	})
 
 	// Start server
-	port := cfg.Port
+	port := cfg.Manager.Port
 	log.Printf("Server started on http://localhost:%s", port)
 
 	server := &http.Server{
