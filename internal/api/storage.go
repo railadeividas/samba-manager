@@ -109,7 +109,7 @@ func GetFileSystemSizes() (DisksResponse, error) {
 	}
 
 	// Get list of shares to mark mounts that are used for Samba shares
-	shares, err := readSambaConfig()
+	shares, err := ReadConfig()
 	if err != nil {
 		return DisksResponse{}, err
 	}
@@ -208,7 +208,7 @@ func getShareSizes() (ShareSizesResponse, error) {
 	}
 
 	// Get list of shares
-	shares, err := readSambaConfig()
+	shares, err := ReadConfig()
 	if err != nil {
 		return ShareSizesResponse{}, err
 	}
