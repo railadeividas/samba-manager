@@ -23,7 +23,7 @@ import FolderIcon from '@mui/icons-material/Folder';
 import PersonIcon from '@mui/icons-material/Person';
 import GroupsIcon from '@mui/icons-material/Groups';
 import LockIcon from '@mui/icons-material/Lock';
-import { getShareACLs } from '../../services/sharesService';
+import { getShareACLs } from '../../services/configService';
 import { useNotification } from '../../context/NotificationContext';
 
 const ShareACLDialog = ({ open, shareName, onClose }) => {

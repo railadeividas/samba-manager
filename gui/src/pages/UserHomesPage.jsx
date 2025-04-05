@@ -30,7 +30,7 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConnectionError from '../components/Common/ConnectionError';
 import ParamAutocomplete from '../components/Config/ParamAutocomplete';
-import { getSection, updateSection } from '../services/configService';
+import { getSection, updateSection, deleteSection } from '../services/configService';
 import { getUsers } from '../services/usersService';
 import { useApi } from '../services/useApi';
 import { useNotification } from '../context/NotificationContext';
@@ -141,7 +141,12 @@ const UserHomesPage = () => {
     setSaving(true);
 
     try {
-      await updateSection('homes', homesEnabled ? homesConfig : {});
+      if (homesEnabled) {
+        await updateSection('homes', homesConfig);
+      } else {
+        // When disabled, delete the entire homes section
+        await deleteSection('homes');
+      }
       showNotification('Home directories configuration saved successfully', 'success');
       setOriginalHomesConfig(JSON.parse(JSON.stringify(homesConfig)));
       setHasChanges(false);

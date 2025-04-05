@@ -1,5 +1,8 @@
 import api from './api';
 
+// Special sections that should be excluded from shares
+export const SPECIAL_SECTIONS = ['global', 'printers', 'print$', 'homes'];
+
 /**
  * Get the entire Samba configuration
  * @returns {Promise<Object>} - Complete configuration data
@@ -78,6 +81,78 @@ export const getRawConfig = async () => {
 export const saveRawConfig = async (content) => {
   try {
     const response = await api.post('/config/raw', { content });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Get all shares from the config
+ * @returns {Promise<Object>} - Shares data
+ */
+export const getShares = async () => {
+  try {
+    const response = await api.get('/config');
+    const config = response.data.config;
+    const shares = {};
+
+    // Filter out special sections
+    Object.entries(config).forEach(([section, params]) => {
+      if (!SPECIAL_SECTIONS.includes(section)) {
+        shares[section] = params;
+      }
+    });
+
+    return shares;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Get a specific share from the config
+ * @param {string} shareName - Share name
+ * @returns {Promise<Object>} - Share data
+ */
+export const getShare = async (shareName) => {
+  try {
+    const response = await api.get(`/config/sections/${shareName}`);
+    return response.data[shareName];
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Create or update a share in the config
+ * @param {string} shareName - Share name
+ * @param {Object} shareData - Share configuration
+ * @returns {Promise<Object>} - Response
+ */
+export const createUpdateShare = async (shareName, shareData) => {
+  try {
+    const response = await api.post(`/config/sections/${shareName}`, {
+      [shareName]: shareData
+    });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const deleteSection = async (sectionName) => {
+  try {
+    const response = await api.delete(`/config/sections/${sectionName}`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getShareACLs = async (shareName) => {
+  try {
+    const response = await api.get(`/shares/${shareName}/acl`);
     return response.data;
   } catch (error) {
     throw error;

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -320,6 +321,8 @@ func WriteConfig(config SambaConfig) error {
 				if section, exists := config[currentSection]; exists {
 					addSectionParams(&newConfig, section)
 				}
+				// Add empty line after section
+				newConfig = append(newConfig, "")
 			}
 
 			// Start of new section
@@ -333,12 +336,12 @@ func WriteConfig(config SambaConfig) error {
 
 		// If we're in a section
 		if inSection {
-			// Skip parameter lines in the current section - we'll add our own
-			if paramRegex.MatchString(trimmedLine) {
+			// Skip parameter lines and empty lines in the current section - we'll add our own
+			if paramRegex.MatchString(trimmedLine) || trimmedLine == "" {
 				continue
 			}
 
-			// Keep non-parameter lines (comments, blank lines)
+			// Keep non-parameter lines (comments)
 			if !paramRegex.MatchString(trimmedLine) {
 				newConfig = append(newConfig, line)
 			}
@@ -354,14 +357,21 @@ func WriteConfig(config SambaConfig) error {
 		if section, exists := config[currentSection]; exists {
 			addSectionParams(&newConfig, section)
 		}
+		// Add empty line after last section
+		newConfig = append(newConfig, "")
 	}
 
 	// Second pass: add sections that weren't in the file
 	for sectionName, sectionParams := range config {
 		if !processedSections[sectionName] && len(sectionParams) > 0 {
-			newConfig = append(newConfig, "")
+			// Add empty line before new section
+			if len(newConfig) > 0 && newConfig[len(newConfig)-1] != "" {
+				newConfig = append(newConfig, "")
+			}
 			newConfig = append(newConfig, fmt.Sprintf("[%s]", sectionName))
 			addSectionParams(&newConfig, sectionParams)
+			// Add empty line after section
+			newConfig = append(newConfig, "")
 			processedSections[sectionName] = true
 		}
 	}
@@ -375,9 +385,80 @@ func WriteConfig(config SambaConfig) error {
 	return nil
 }
 
-// addSectionParams adds parameters to a section
+// addSectionParams adds parameters to a section with consistent formatting
 func addSectionParams(config *[]string, params SectionConfig) {
-	for key, value := range params {
-		*config = append(*config, fmt.Sprintf("    %s = %s", key, value))
+	// Sort parameters for consistent order
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
 	}
+	sort.Strings(keys)
+
+	// Add parameters with consistent indentation, no empty lines between them
+	for _, key := range keys {
+		*config = append(*config, fmt.Sprintf("    %s = %s", key, params[key]))
+	}
+}
+
+// DeleteSection deletes a specific section from the Samba configuration
+func (h *APIHandler) DeleteSection(w http.ResponseWriter, r *http.Request) {
+	sectionName := getRouteParam(regexp.MustCompile(`^/config/sections/([^/]+)$`), r.URL.Path, 1)
+
+	// Get raw config content
+	content, err := os.ReadFile(GetConfigPath())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Split content into lines
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	inSection := false
+
+	// Process each line
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Check if we're entering the section to delete
+		if trimmedLine == fmt.Sprintf("[%s]", sectionName) {
+			inSection = true
+			continue
+		}
+
+		// Skip lines until we exit the section
+		if inSection {
+			if strings.HasPrefix(trimmedLine, "[") && strings.HasSuffix(trimmedLine, "]") {
+				inSection = false
+				newLines = append(newLines, line)
+			}
+			continue
+		}
+
+		// Add lines that are not part of the section to delete
+		newLines = append(newLines, line)
+	}
+
+	// Join lines back together
+	newContent := strings.Join(newLines, "\n")
+
+	// Write the new content
+	err = os.WriteFile(GetConfigPath(), []byte(newContent), 0644)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Restart Samba service
+	err = restartSambaService()
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(APIResponse{
+		Status:  "success",
+		Message: fmt.Sprintf("Section '%s' deleted successfully", sectionName),
+	})
 }
