@@ -71,18 +71,10 @@ func (h *APIHandler) GetShare(w http.ResponseWriter, r *http.Request) {
 
 // CreateUpdateShare creates or updates a share
 func (h *APIHandler) CreateUpdateShare(w http.ResponseWriter, r *http.Request) {
-	shareName := getRouteParam(regexp.MustCompile(`^/shares/([^/]+)$`), r.URL.Path, 1)
-
 	var shareData Share
 	err := json.NewDecoder(r.Body).Decode(&shareData)
 	if err != nil {
 		writeError(w, "Invalid JSON format", http.StatusBadRequest)
-		return
-	}
-
-	shares, err := ReadConfig()
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -96,15 +88,6 @@ func (h *APIHandler) CreateUpdateShare(w http.ResponseWriter, r *http.Request) {
 	err = createShareDirectory(shareData)
 	if err != nil {
 		writeError(w, fmt.Sprintf("Failed to create directory and set up ACLs: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Update share config
-	shares[shareName] = SectionConfig(shareData)
-
-	err = WriteConfig(shares)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -209,16 +192,10 @@ func setupShareACL(shareData Share) error {
 		return nil
 	}
 
-	// Clear existing ACLs
-	clearCmd := exec.Command("setfacl", "-b", path)
+	// Reset ACLs recursively
+	clearCmd := exec.Command("setfacl", "-Rb", path)
 	if err := clearCmd.Run(); err != nil {
-		return fmt.Errorf("Failed to clear existing ACLs: %v", err)
-	}
-
-	// Set default mask to allow read and execute but not write
-	maskCmd := exec.Command("setfacl", "-m", "m::rx", path)
-	if err := maskCmd.Run(); err != nil {
-		return fmt.Errorf("Failed to set default mask: %v", err)
+		return fmt.Errorf("Failed to reset existing ACLs recursively: %v", err)
 	}
 
 	// Process "valid users" (read + execute permissions)
@@ -236,17 +213,29 @@ func setupShareACL(shareData Share) error {
 				// It's a group - remove the prefix to get the group name
 				groupName := strings.TrimPrefix(strings.TrimPrefix(entry, "@"), "+")
 
-				// Set read and execute permissions for group
-				groupCmd := exec.Command("setfacl", "-m", fmt.Sprintf("g:%s:r-x", groupName), path)
+				// Set read and execute permissions for group recursively to all files and directories
+				groupCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("g:%s:r-x", groupName), path)
 				if err := groupCmd.Run(); err != nil {
 					return fmt.Errorf("Failed to set ACL for valid group %s: %v", groupName, err)
 				}
+
+				// Set read and execute permissions for group defaults recursively to all files and directories
+				defaultGroupCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:g:%s:r-x", groupName), path)
+				if err := defaultGroupCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set default ACL for valid group %s: %v", groupName, err)
+				}
 			} else {
 				// It's a user
-				// Set read and execute permissions for user
-				userCmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%s:r-x", entry), path)
+				// Set read and execute permissions for user recursively to all files and directories
+				userCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("u:%s:r-x", entry), path)
 				if err := userCmd.Run(); err != nil {
 					return fmt.Errorf("Failed to set ACL for valid user %s: %v", entry, err)
+				}
+
+				// Set read and execute permissions for user defaults recursively to all files and directories
+				defaultUserCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:u:%s:r-x", entry), path)
+				if err := defaultUserCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set default ACL for valid user %s: %v", entry, err)
 				}
 			}
 		}
@@ -267,81 +256,29 @@ func setupShareACL(shareData Share) error {
 				// It's a group - remove the prefix to get the group name
 				groupName := strings.TrimPrefix(strings.TrimPrefix(entry, "@"), "+")
 
-				// Set read, write, and execute permissions for group
-				groupCmd := exec.Command("setfacl", "-m", fmt.Sprintf("g:%s:rwx", groupName), path)
+				// Set read, write, and execute permissions for group recursively to all files and directories
+				groupCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("g:%s:rwx", groupName), path)
 				if err := groupCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set ACL for write list group %s: %v", groupName, err)
+				}
+
+				// Set read, write, and execute permissions for group defaults recursively to all files and directories
+				defaultGroupCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:g:%s:rwx", groupName), path)
+				if err := defaultGroupCmd.Run(); err != nil {
 					return fmt.Errorf("Failed to set ACL for write list group %s: %v", groupName, err)
 				}
 			} else {
 				// It's a user
-				// Set read, write, and execute permissions for user
-				userCmd := exec.Command("setfacl", "-m", fmt.Sprintf("u:%s:rwx", entry), path)
+				// Set read, write, and execute permissions for user recursively to all files and directories
+				userCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("u:%s:rwx", entry), path)
 				if err := userCmd.Run(); err != nil {
 					return fmt.Errorf("Failed to set ACL for write list user %s: %v", entry, err)
 				}
-			}
-		}
-	}
 
-	// Apply the same ACLs recursively to all files and directories
-	recurseCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:%s", "m::rx"), path)
-	if err := recurseCmd.Run(); err != nil {
-		return fmt.Errorf("Failed to set default recursive ACLs: %v", err)
-	}
-
-	// For valid users, set default ACLs recursively
-	if hasValidUsers {
-		validUsers := strings.Split(validUsersStr, ",")
-		for _, entry := range validUsers {
-			entry = strings.TrimSpace(entry)
-			if entry == "" {
-				continue
-			}
-
-			// Check if it's a group
-			if strings.HasPrefix(entry, "@") || strings.HasPrefix(entry, "+") {
-				// It's a group - remove the prefix
-				groupName := strings.TrimPrefix(strings.TrimPrefix(entry, "@"), "+")
-
-				// Set default ACLs for group
-				recurseGroupCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:g:%s:r-x", groupName), path)
-				if err := recurseGroupCmd.Run(); err != nil {
-					return fmt.Errorf("Failed to set recursive ACLs for valid group %s: %v", groupName, err)
-				}
-			} else {
-				// It's a user
-				recurseUserCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:u:%s:r-x", entry), path)
-				if err := recurseUserCmd.Run(); err != nil {
-					return fmt.Errorf("Failed to set recursive ACLs for valid user %s: %v", entry, err)
-				}
-			}
-		}
-	}
-
-	// For write list entries, set default ACLs recursively
-	if hasWriteList {
-		writeUsers := strings.Split(writeListStr, ",")
-		for _, entry := range writeUsers {
-			entry = strings.TrimSpace(entry)
-			if entry == "" {
-				continue
-			}
-
-			// Check if it's a group
-			if strings.HasPrefix(entry, "@") || strings.HasPrefix(entry, "+") {
-				// It's a group - remove the prefix
-				groupName := strings.TrimPrefix(strings.TrimPrefix(entry, "@"), "+")
-
-				// Set default ACLs for group
-				recurseGroupCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:g:%s:rwx", groupName), path)
-				if err := recurseGroupCmd.Run(); err != nil {
-					return fmt.Errorf("Failed to set recursive ACLs for write group %s: %v", groupName, err)
-				}
-			} else {
-				// It's a user
-				recurseUserCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:u:%s:rwx", entry), path)
-				if err := recurseUserCmd.Run(); err != nil {
-					return fmt.Errorf("Failed to set recursive ACLs for write user %s: %v", entry, err)
+				// Set read, write, and execute permissions for user defaults recursively to all files and directories
+				defaultUserCmd := exec.Command("setfacl", "-R", "-m", fmt.Sprintf("d:u:%s:rwx", entry), path)
+				if err := defaultUserCmd.Run(); err != nil {
+					return fmt.Errorf("Failed to set ACL for write list user %s: %v", entry, err)
 				}
 			}
 		}

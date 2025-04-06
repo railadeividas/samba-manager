@@ -143,8 +143,15 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
           .map(item => item.value)
           .join(', ');
 
-        // Create share configuration object
-        const shareConfig = {
+        // Helper function to filter out empty values
+        const filterEmptyValues = (obj) => {
+          return Object.fromEntries(
+            Object.entries(obj).filter(([_, value]) => value !== '' && value !== undefined && value !== null)
+          );
+        };
+
+        // Create share configuration object for Samba config
+        const sambaConfig = filterEmptyValues({
           path: values.path,
           comment: values.comment,
           browseable: values.browseable,
@@ -156,13 +163,23 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
           'directory mask': values['directory mask'],
           'force user': values['force user'],
           'force group': values['force group']
-        };
+        });
+
+        // Create directory setup object for ACLs and directory creation
+        const directoryConfig = filterEmptyValues({
+          path: values.path,
+          owner: values.owner,
+          group: values.group,
+          permissions: values.permissions,
+          'valid users': validUsersStr,
+          'write list': writeListStr
+        });
 
         // First, update the share configuration
-        await createUpdateShare(shareName, shareConfig);
+        await createUpdateShare(shareName, sambaConfig);
 
         // Then, create the share directory and set up ACLs
-        await api.post(`/shares/${shareName}`, shareConfig);
+        await api.post(`/shares/${shareName}`, directoryConfig);
 
         // Show success message with details about what was done
         showNotification(
