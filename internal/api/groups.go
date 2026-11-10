@@ -1,283 +1,132 @@
 package api
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
+
+	"samba-manager/internal/system"
 )
 
-// Group represents a Linux/Samba group
+// Group is the API representation of a Unix group.
 type Group struct {
 	Name      string   `json:"name"`
 	Users     []string `json:"users"`
 	GID       int      `json:"gid"`
 	IsSystem  bool     `json:"isSystem"`
+	IsPrivate bool     `json:"isPrivate,omitempty"`
 }
 
-// GroupListResponse represents the response for group listing
-type GroupListResponse struct {
-	Groups []Group `json:"groups"`
-	Error  string  `json:"error,omitempty"`
-}
-
-// GetGroups returns all Samba groups
-func (h *APIHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
-	// Check if we should include system groups
+func (s *Server) getGroups(w http.ResponseWriter, r *http.Request) error {
 	includeSystem := r.URL.Query().Get("includeSystem") == "true"
-
-	groups, err := getSambaGroups(includeSystem)
+	includePrivate := r.URL.Query().Get("includePrivate") == "true"
+	all, err := system.ReadGroups()
 	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
+		return fmt.Errorf("failed to list groups: %w", err)
 	}
-
-	json.NewEncoder(w).Encode(GroupListResponse{
-		Groups: groups,
-	})
+	groups := []Group{}
+	for _, g := range all {
+		sys := system.IsSystemGID(g.GID)
+		if (sys && !includeSystem) || (g.Private && !includePrivate && !sys) {
+			continue
+		}
+		groups = append(groups, Group{Name: g.Name, Users: g.Members, GID: g.GID, IsSystem: sys, IsPrivate: g.Private})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+	return nil
 }
 
-// CreateGroup creates a new Samba group
-func (h *APIHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
-	groupName := getRouteParam(regexp.MustCompile(`^/groups/([^/]+)$`), r.URL.Path, 1)
-
-	err := createSambaGroup(groupName)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
+func (s *Server) createGroup(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("name")
+	if err := system.ValidateGroupname(name); err != nil {
+		return badRequest("%v", err)
 	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: "Group created successfully",
-	})
-}
-
-// DeleteGroup deletes a Samba group
-func (h *APIHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
-	groupName := getRouteParam(regexp.MustCompile(`^/groups/([^/]+)$`), r.URL.Path, 1)
-
-	// Check if it's a system group
-	gid, err := getGroupGID(groupName)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
+	if _, err := system.LookupGroup(name); err == nil {
+		return conflict("Group %s already exists", name)
 	}
-
-	if (gid < 1000 || gid == 65534) {
-		writeError(w, "Cannot delete system groups (GID < 1000)", http.StatusForbidden)
-		return
+	if err := s.Users.AddGroup(r.Context(), name); err != nil {
+		return fmt.Errorf("failed to create group: %w", err)
 	}
-
-	err = deleteSambaGroup(groupName)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: "Group deleted successfully",
-	})
-}
-
-// AddUserToGroup adds a user to a group
-func (h *APIHandler) AddUserToGroup(w http.ResponseWriter, r *http.Request) {
-	groupName := getRouteParam(regexp.MustCompile(`^/groups/([^/]+)/users/([^/]+)$`), r.URL.Path, 1)
-	userName := getRouteParam(regexp.MustCompile(`^/groups/([^/]+)/users/([^/]+)$`), r.URL.Path, 2)
-
-	err := addUserToSambaGroup(userName, groupName)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: fmt.Sprintf("User %s added to group %s successfully", userName, groupName),
-	})
-}
-
-// RemoveUserFromGroup removes a user from a group
-func (h *APIHandler) RemoveUserFromGroup(w http.ResponseWriter, r *http.Request) {
-	groupName := getRouteParam(regexp.MustCompile(`^/groups/([^/]+)/users/([^/]+)$`), r.URL.Path, 1)
-	userName := getRouteParam(regexp.MustCompile(`^/groups/([^/]+)/users/([^/]+)$`), r.URL.Path, 2)
-
-	err := removeUserFromSambaGroup(userName, groupName)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: fmt.Sprintf("User %s removed from group %s successfully", userName, groupName),
-	})
-}
-
-// getGroupGID gets the GID of a group
-func getGroupGID(groupName string) (int, error) {
-	cmd := exec.Command("getent", "group", groupName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("Failed to get group info: %v", err)
-	}
-
-	parts := strings.Split(strings.TrimSpace(string(output)), ":")
-	if len(parts) < 3 {
-		return 0, fmt.Errorf("Unexpected output format for group info")
-	}
-
-	gid, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return 0, fmt.Errorf("Failed to parse GID: %v", err)
-	}
-
-	return gid, nil
-}
-
-// getSambaGroups returns a list of all Samba groups
-func getSambaGroups(includeSystem bool) ([]Group, error) {
-	// Get all groups from system
-	cmd := exec.Command("getent", "group")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("Failed to list groups: %v", err)
-	}
-
-	// Parse the output
-	var groups []Group
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Split(line, ":")
-		if len(parts) >= 4 {
-			groupName := parts[0]
-
-			// Parse GID
-			gid, err := strconv.Atoi(parts[2])
-			if err != nil {
-				continue // Skip if GID can't be parsed
-			}
-
-			// Check if it's a system group
-			isSystem := (gid < 1000 || gid == 65534)
-
-			// Skip system groups if not included
-			if isSystem && !includeSystem {
-				continue
-			}
-
-			// Get user list (last field is comma-separated list of users)
-			users := []string{}
-			userList := parts[3]
-			if userList != "" {
-				users = strings.Split(userList, ",")
-			}
-
-			group := Group{
-				Name:     groupName,
-				Users:    users,
-				GID:      gid,
-				IsSystem: isSystem,
-			}
-			groups = append(groups, group)
+	warning := ""
+	if g, err := system.LookupGroup(name); err == nil {
+		if err := s.State.RecordGroup(name, g.GID); err != nil {
+			warning = "Group created, but the state file could not be updated: " + err.Error()
 		}
 	}
-
-	return groups, nil
-}
-
-// createSambaGroup creates a new Samba group
-func createSambaGroup(groupName string) error {
-	// Create the group
-	cmd := exec.Command("groupadd", groupName)
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("Failed to create group: %v", err)
-	}
-
+	ok(w, "Group created successfully", warning)
 	return nil
 }
 
-// deleteSambaGroup deletes a Samba group
-func deleteSambaGroup(groupName string) error {
-	// Check if it's a system group
-	gid, err := getGroupGID(groupName)
+func (s *Server) deleteGroup(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("name")
+	if err := system.ValidateGroupname(name); err != nil {
+		return badRequest("%v", err)
+	}
+	g, err := system.LookupGroup(name)
 	if err != nil {
-		return err
+		return notFound("Group %s not found", name)
 	}
-
-	if (gid < 1000 || gid == 65534) {
-		return fmt.Errorf("Cannot delete system groups (GID < 1000)")
+	if system.IsSystemGID(g.GID) {
+		return forbidden("Cannot delete system groups (GID < 1000)")
 	}
-
-	// Delete the group
-	cmd := exec.Command("groupdel", groupName)
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("Failed to delete group: %v", err)
+	if err := s.Users.DelGroup(r.Context(), name); err != nil {
+		return fmt.Errorf("failed to delete group: %w", err)
 	}
-
+	_ = s.State.ForgetGroup(name)
+	warning := ""
+	if refs := s.sharesReferencing("@" + name); len(refs) > 0 {
+		warning = fmt.Sprintf("The group is still listed in share(s): %v.", refs)
+	}
+	ok(w, "Group deleted successfully", warning)
 	return nil
 }
 
-// addUserToSambaGroup adds a user to a group
-func addUserToSambaGroup(userName, groupName string) error {
-	// Add user to group
-	cmd := exec.Command("usermod", "-a", "-G", groupName, userName)
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("Failed to add user to group: %v", err)
+func (s *Server) addUserToGroup(w http.ResponseWriter, r *http.Request) error {
+	group, user := r.PathValue("name"), r.PathValue("user")
+	if err := system.ValidateGroupname(group); err != nil {
+		return badRequest("%v", err)
 	}
-
+	if err := system.ValidateUsername(user); err != nil {
+		return badRequest("%v", err)
+	}
+	if _, err := system.LookupGroup(group); err != nil {
+		return notFound("Group %s not found", group)
+	}
+	if _, err := system.LookupUser(user); err != nil {
+		return notFound("User %s not found", user)
+	}
+	if err := s.Users.AddToGroup(r.Context(), user, group); err != nil {
+		return fmt.Errorf("failed to add user to group: %w", err)
+	}
+	_ = s.State.SetMember(group, user, true)
+	ok(w, fmt.Sprintf("User %s added to group %s successfully", user, group),
+		"Connected clients pick up the new membership after they reconnect.")
 	return nil
 }
 
-// removeUserFromSambaGroup removes a user from a group
-func removeUserFromSambaGroup(userName, groupName string) error {
-	// Get all groups for user
-	cmd := exec.Command("groups", userName)
-	output, err := cmd.CombinedOutput()
+func (s *Server) removeUserFromGroup(w http.ResponseWriter, r *http.Request) error {
+	group, user := r.PathValue("name"), r.PathValue("user")
+	if err := system.ValidateGroupname(group); err != nil {
+		return badRequest("%v", err)
+	}
+	if err := system.ValidateUsername(user); err != nil {
+		return badRequest("%v", err)
+	}
+	g, err := system.LookupGroup(group)
 	if err != nil {
-		return fmt.Errorf("Failed to get user groups: %v", err)
+		return notFound("Group %s not found", group)
 	}
-
-	// Parse output to get current groups
-	outputStr := strings.TrimSpace(string(output))
-	groupsStr := strings.Split(outputStr, ":")
-	if len(groupsStr) < 2 {
-		return fmt.Errorf("Unexpected output from groups command: %s", outputStr)
+	member := false
+	for _, m := range g.Members {
+		member = member || m == user
 	}
-
-	groupsList := strings.Split(strings.TrimSpace(groupsStr[1]), " ")
-	var newGroups []string
-	for _, g := range groupsList {
-		g = strings.TrimSpace(g)
-		if g != "" && g != groupName {
-			newGroups = append(newGroups, g)
-		}
+	if !member {
+		return notFound("User %s is not a member of group %s", user, group)
 	}
-
-	// Set new groups for user (removing the specified group)
-	if len(newGroups) > 0 {
-		cmd = exec.Command("usermod", "-G", strings.Join(newGroups, ","), userName)
-	} else {
-		// If user has no groups, set empty groups
-		cmd = exec.Command("usermod", "-G", "", userName)
+	if err := s.Users.RemoveFromGroup(r.Context(), user, group); err != nil {
+		return fmt.Errorf("failed to remove user from group: %w", err)
 	}
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("Failed to remove user from group: %v", err)
-	}
-
+	_ = s.State.SetMember(group, user, false)
+	ok(w, fmt.Sprintf("User %s removed from group %s successfully", user, group),
+		"Connected clients keep the old membership until they reconnect.")
 	return nil
 }

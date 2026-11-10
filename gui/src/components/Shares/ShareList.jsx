@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Paper from '@mui/material/Paper';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
@@ -24,17 +23,19 @@ import PersonIcon from '@mui/icons-material/Person';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CommentIcon from '@mui/icons-material/Comment';
-import { deleteSection } from '../../services/configService';
+import LinkIcon from '@mui/icons-material/Link';
+import { deleteShare } from '../../services/configService';
 import { useNotification } from '../../context/NotificationContext';
 import ConfirmDialog from '../Common/ConfirmDialog';
 import ShareUsage from './ShareUsage';
+import ConnectDialog from './ConnectDialog';
 
 const ShareList = ({ shares, onEdit, onRefresh, loading, sharesSizeData }) => {
-  const navigate = useNavigate();
   const { showNotification } = useNotification();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [shareToDelete, setShareToDelete] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [connectShare, setConnectShare] = useState(null);
 
   // Convert shares object to array and sort by name
   const sharesList = Object.entries(shares).map(([name, config]) => ({
@@ -61,7 +62,7 @@ const ShareList = ({ shares, onEdit, onRefresh, loading, sharesSizeData }) => {
 
     setDeleteLoading(true);
     try {
-      await deleteSection(shareToDelete.name);
+      await deleteShare(shareToDelete.name);
       showNotification(`Share "${shareToDelete.name}" deleted successfully`, 'success');
       onRefresh();
     } catch (error) {
@@ -184,6 +185,16 @@ const ShareList = ({ shares, onEdit, onRefresh, loading, sharesSizeData }) => {
                             sx={{ height: 24, fontSize: '0.75rem' }}
                           />
                         </Tooltip>
+                        <Tooltip title={share._access === 'acl'
+                          ? 'Access is enforced by the filesystem with POSIX ACLs; files keep their real owners'
+                          : 'Access is enforced by Samba (valid users / write list); files belong to one account'}>
+                          <Chip
+                            label={share._access === 'acl' ? 'POSIX ACL' : 'Samba-only'}
+                            size="small"
+                            variant="outlined"
+                            sx={{ height: 24, fontSize: '0.75rem' }}
+                          />
+                        </Tooltip>
                         <Tooltip title={`Read-only: ${share['read only'] || 'no'}`}>
                           <Chip
                             icon={(share['read only'] || 'no') === 'no' ? <LockOpenIcon fontSize="small" /> : <LockIcon fontSize="small" />}
@@ -230,6 +241,16 @@ const ShareList = ({ shares, onEdit, onRefresh, loading, sharesSizeData }) => {
                   />
                   <ListItemSecondaryAction>
                     <Box sx={{ display: 'flex' }}>
+                      <Tooltip title="How to connect">
+                        <IconButton
+                          edge="end"
+                          aria-label="connect"
+                          onClick={() => setConnectShare(share.name)}
+                          size="small"
+                        >
+                          <LinkIcon />
+                        </IconButton>
+                      </Tooltip>
                       <IconButton
                         edge="end"
                         aria-label="edit"
@@ -258,6 +279,8 @@ const ShareList = ({ shares, onEdit, onRefresh, loading, sharesSizeData }) => {
           })}
         </List>
       </Paper>
+
+      <ConnectDialog open={Boolean(connectShare)} shareName={connectShare} onClose={() => setConnectShare(null)} />
 
       <ConfirmDialog
         open={deleteDialogOpen}

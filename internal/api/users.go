@@ -1,248 +1,233 @@
 package api
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
-	"os/user"
-	"regexp"
-	"strconv"
+	"path/filepath"
 	"strings"
+
+	"samba-manager/internal/smbconf"
+	"samba-manager/internal/state"
+	"samba-manager/internal/system"
 )
 
-// GetUsers returns all Samba users
-func (h *APIHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := getSambaUsers()
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(UserListResponse{
-		Users: users,
-	})
+// PasswordRequest carries a password.
+type PasswordRequest struct {
+	Password string `json:"password"`
 }
 
-// CreateUser creates a new Samba user
-func (h *APIHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
-	username := getRouteParam(regexp.MustCompile(`^/users/([^/]+)$`), r.URL.Path, 1)
-
-	var passwordReq PasswordRequest
-	err := json.NewDecoder(r.Body).Decode(&passwordReq)
+// sambaUsers lists the users in Samba's password database.
+func (s *Server) sambaUsers(r *http.Request) ([]string, error) {
+	out, err := s.Run.Run(r.Context(), "", "pdbedit", "-L")
 	if err != nil {
-		writeError(w, "Invalid JSON format", http.StatusBadRequest)
-		return
+		return nil, fmt.Errorf("failed to list Samba users: %w", err)
 	}
-
-	if passwordReq.Password == "" {
-		writeError(w, "Password is required", http.StatusBadRequest)
-		return
-	}
-
-	err = createSambaUser(username, passwordReq.Password)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: "User created successfully",
-	})
-}
-
-// DeleteUser deletes a Samba user
-func (h *APIHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
-	username := getRouteParam(regexp.MustCompile(`^/users/([^/]+)$`), r.URL.Path, 1)
-
-	err := deleteSambaUser(username)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: "User deleted successfully",
-	})
-}
-
-// ChangePassword changes a user's password
-func (h *APIHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
-	username := getRouteParam(regexp.MustCompile(`^/users/([^/]+)/password$`), r.URL.Path, 1)
-
-	var passwordReq PasswordRequest
-	err := json.NewDecoder(r.Body).Decode(&passwordReq)
-	if err != nil {
-		writeError(w, "Invalid JSON format", http.StatusBadRequest)
-		return
-	}
-
-	if passwordReq.Password == "" {
-		writeError(w, "Password is required", http.StatusBadRequest)
-		return
-	}
-
-	err = changeSambaPassword(username, passwordReq.Password)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: "Password changed successfully",
-	})
-}
-
-// getSambaUsers returns a list of all Samba users
-func getSambaUsers() ([]string, error) {
-	cmd := exec.Command(SMB_USER_LIST_CMD, "-L")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("Failed to list Samba users: %v", err)
-	}
-
-	var users []string
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, ":") {
-			username := strings.TrimSpace(strings.Split(line, ":")[0])
-			if username != "" && !strings.HasPrefix(username, "#") {
-				users = append(users, username)
-			}
+	users := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		name, _, found := strings.Cut(line, ":")
+		name = strings.TrimSpace(name)
+		if found && name != "" && !strings.HasPrefix(name, "#") {
+			users = append(users, name)
 		}
 	}
-
 	return users, nil
 }
 
-// createSambaUser creates a new Samba user
-func createSambaUser(username, password string) error {
-	// Add user to system
-	sysCmd := exec.Command("useradd", "-M", "-s", "/sbin/nologin", username)
-	err := sysCmd.Run()
+func (s *Server) hasSambaUser(r *http.Request, name string) (bool, error) {
+	users, err := s.sambaUsers(r)
 	if err != nil {
-		return fmt.Errorf("Failed to create system user: %v", err)
+		return false, err
 	}
+	for _, u := range users {
+		if u == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
-	// Add to Samba database
-	smbCmd := exec.Command(SMB_USER_ADD_CMD, "-a", "-u", username)
-	smbCmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
-	err = smbCmd.Run()
+func (s *Server) getUsers(w http.ResponseWriter, r *http.Request) error {
+	users, err := s.sambaUsers(r)
 	if err != nil {
-		return fmt.Errorf("Failed to add Samba user: %v", err)
+		return err
 	}
-
-	// Set password
-	passCmd := exec.Command(SMB_PASSWD_CMD, "-a", username)
-	passCmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
-	err = passCmd.Run()
-	if err != nil {
-		return fmt.Errorf("Failed to set Samba password: %v", err)
-	}
-
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 	return nil
 }
 
-// deleteSambaUser deletes a Samba user
-func deleteSambaUser(username string) error {
-	// Delete from Samba database
-	smbCmd := exec.Command(SMB_USER_DEL_CMD, "-x", username)
-	err := smbCmd.Run()
-	if err != nil {
-		return fmt.Errorf("Failed to delete Samba user: %v", err)
+func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("name")
+	if err := system.ValidateUsername(name); err != nil {
+		return badRequest("%v", err)
+	}
+	var req PasswordRequest
+	if err := decode(w, r, &req); err != nil {
+		return err
+	}
+	if err := system.ValidatePassword(req.Password); err != nil {
+		return badRequest("%v", err)
+	}
+	if exists, err := s.hasSambaUser(r, name); err != nil {
+		return err
+	} else if exists {
+		return conflict("User %s already exists", name)
 	}
 
-	// Remove from system
-	sysCmd := exec.Command("userdel", username)
-	err = sysCmd.Run()
+	ctx := r.Context()
+	created := false
+	acct, err := system.LookupUser(name)
 	if err != nil {
-		return fmt.Errorf("Failed to delete system user: %v", err)
+		if err := s.Users.AddUser(ctx, name); err != nil {
+			return fmt.Errorf("failed to create system user: %w", err)
+		}
+		created = true
+		if acct, err = system.LookupUser(name); err != nil {
+			return fmt.Errorf("system user was created but cannot be read back: %w", err)
+		}
+	} else if acct.UID < 1000 || acct.UID == 65534 {
+		return forbidden("%s is a system account and cannot be used as a Samba user", name)
 	}
 
+	pw := req.Password + "\n"
+	if _, err := s.Run.Run(ctx, pw+pw, "smbpasswd", "-a", "-s", name); err != nil {
+		if created {
+			_ = s.Users.DelUser(ctx, name)
+		}
+		return fmt.Errorf("failed to add Samba user: %w", err)
+	}
+
+	if created {
+		group := ""
+		if g, err := system.LookupGroupByGID(acct.GID); err == nil {
+			group = g.Name
+		}
+		if err := s.State.RecordUser(state.UserRec{Name: name, UID: acct.UID, GID: acct.GID, Group: group, Created: true}); err != nil {
+			ok(w, "User created successfully", "User created, but the state file could not be updated: "+err.Error())
+			return nil
+		}
+	}
+	ok(w, "User created successfully", "")
 	return nil
 }
 
-// changeSambaPassword changes a user's password
-func changeSambaPassword(username, password string) error {
-	cmd := exec.Command(SMB_PASSWD_CMD, username)
-	cmd.Stdin = strings.NewReader(fmt.Sprintf("%s\n%s\n", password, password))
-	err := cmd.Run()
+func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("name")
+	if err := system.ValidateUsername(name); err != nil {
+		return badRequest("%v", err)
+	}
+	exists, err := s.hasSambaUser(r, name)
 	if err != nil {
-		return fmt.Errorf("Failed to change password: %v", err)
+		return err
+	}
+	if !exists {
+		return notFound("User %s not found", name)
+	}
+	ctx := r.Context()
+	if _, err := s.Run.Run(ctx, "", "pdbedit", "-x", "-u", name); err != nil {
+		return fmt.Errorf("failed to delete Samba user: %w", err)
 	}
 
+	warning := ""
+	if s.State.IsUserCreated(name) {
+		if err := s.Users.DelUser(ctx, name); err != nil {
+			warning = "Samba user removed, but the system account could not be deleted: " + err.Error()
+		}
+		_ = s.State.ForgetUser(name)
+	}
+	if refs := s.sharesReferencing(name); len(refs) > 0 {
+		warning = strings.TrimSpace(warning + fmt.Sprintf(" The user is still listed in share(s): %s.", strings.Join(refs, ", ")))
+	}
+	ok(w, "User deleted successfully", warning)
 	return nil
 }
 
-// CreateUserHomeDirectory is the API handler for creating a user's home directory
-func (h *APIHandler) CreateUserHomeDirectory(w http.ResponseWriter, r *http.Request) {
-	username := getRouteParam(regexp.MustCompile(`^/users/([^/]+)/home$`), r.URL.Path, 1)
-
-	err := createUserHomeDirectory(username)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("name")
+	if err := system.ValidateUsername(name); err != nil {
+		return badRequest("%v", err)
 	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: fmt.Sprintf("Home directory created for user %s", username),
-	})
+	var req PasswordRequest
+	if err := decode(w, r, &req); err != nil {
+		return err
+	}
+	if err := system.ValidatePassword(req.Password); err != nil {
+		return badRequest("%v", err)
+	}
+	exists, err := s.hasSambaUser(r, name)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return notFound("User %s not found", name)
+	}
+	pw := req.Password + "\n"
+	if _, err := s.Run.Run(r.Context(), pw+pw, "smbpasswd", "-s", name); err != nil {
+		return fmt.Errorf("failed to change password: %w", err)
+	}
+	ok(w, "Password changed successfully", "")
+	return nil
 }
 
-// createUserHomeDirectory creates a home directory for the specified user
-func createUserHomeDirectory(username string) error {
-	// Verify the user exists
-	_, err := user.Lookup(username)
+func (s *Server) createHome(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("name")
+	if err := system.ValidateUsername(name); err != nil {
+		return badRequest("%v", err)
+	}
+	acct, err := system.LookupUser(name)
 	if err != nil {
-		return fmt.Errorf("User %s does not exist", username)
+		return notFound("User %s does not exist", name)
 	}
-
-	// Construct the full path for the user's home directory
-	homePath := fmt.Sprintf("/home/%s", username)
-
-	// Check if home directory already exists
-	if _, err := os.Stat(homePath); err == nil {
-		return fmt.Errorf("Home directory for user %s already exists", username)
+	home := filepath.Clean(acct.Home)
+	if !filepath.IsAbs(home) || home == "/" || home == "/nonexistent" {
+		return badRequest("User %s has no usable home directory (%q)", name, acct.Home)
 	}
-
-	// Create the home directory with appropriate permissions
-	// 0755 means rwxr-xr-x (owner can read/write/execute, group and others can read/execute)
-	err = os.MkdirAll(homePath, 0755)
-	if err != nil {
-		return fmt.Errorf("Failed to create home directory for user %s: %v", username, err)
+	if _, err := system.ValidateSharePath(home, append([]string{"/home"}, s.Cfg.Samba.AllowedRoots...)); err != nil {
+		return badRequest("home directory %s is outside the allowed locations", home)
 	}
-
-	// Change ownership of the directory to the new user
-	userInfo, err := user.Lookup(username)
-	if err != nil {
-		return fmt.Errorf("Failed to lookup user information for %s: %v", username, err)
+	if _, err := os.Stat(home); err == nil {
+		return conflict("Home directory for user %s already exists", name)
 	}
-
-	uid, err := strconv.Atoi(userInfo.Uid)
-	if err != nil {
-		return fmt.Errorf("Failed to convert user ID to integer: %v", err)
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return fmt.Errorf("failed to create home directory: %w", err)
 	}
-
-	gid, err := strconv.Atoi(userInfo.Gid)
-	if err != nil {
-		return fmt.Errorf("Failed to convert group ID to integer: %v", err)
+	if err := os.Chown(home, acct.UID, acct.GID); err != nil {
+		return fmt.Errorf("failed to set ownership of %s: %w", home, err)
 	}
-
-	err = os.Chown(homePath, uid, gid)
-	if err != nil {
-		return fmt.Errorf("Failed to set ownership of home directory for user %s: %v", username, err)
+	if err := os.Chmod(home, 0o700); err != nil {
+		return err
 	}
-
+	ok(w, fmt.Sprintf("Home directory created for user %s", name), "")
 	return nil
+}
+
+// sharesReferencing lists shares whose access lists mention name (a user or group).
+func (s *Server) sharesReferencing(name string) []string {
+	f, err := s.Store.Read()
+	if err != nil {
+		return nil
+	}
+	want := strings.TrimLeft(name, "@+&")
+	var out []string
+	for _, sec := range f.Sections {
+		if system.ReservedSections[strings.ToLower(sec.Name)] {
+			continue
+		}
+		if sectionMentions(sec, want) {
+			out = append(out, sec.Name)
+		}
+	}
+	return out
+}
+
+func sectionMentions(sec *smbconf.Section, bare string) bool {
+	for _, key := range []string{"valid users", "write list", "read list", "admin users", "force user", "force group"} {
+		v, _ := sec.Get(key)
+		for _, e := range listEntries(v) {
+			if strings.TrimLeft(e, "@+&") == bare {
+				return true
+			}
+		}
+	}
+	return false
 }

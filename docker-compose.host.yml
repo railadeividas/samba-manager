@@ -1,0 +1,38 @@
+# Samba Manager with host networking: the server appears on the LAN with its
+# own name, so Windows (WS-Discovery) and macOS/Linux (mDNS/Avahi) list it
+# automatically. Linux hosts only. Ports 445/139/137/138 and 8080 must be free
+# on the host (stop any local Samba first).
+#
+#   docker compose -f docker-compose.host.yml up -d --build
+services:
+  samba-manager:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    image: samba-manager:local
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      SAMBA_MANAGER_PASSWORD: ${SAMBA_MANAGER_PASSWORD:-}
+      SAMBA_MANAGER_PORT: ${UI_PORT:-8080}
+      SAMBA_WORKGROUP: ${SAMBA_WORKGROUP:-WORKGROUP}
+      SAMBA_NETBIOS_NAME: ${SAMBA_NETBIOS_NAME:-}
+      SAMBA_MANAGER_WSDD: "true"
+      SAMBA_MANAGER_AVAHI: "true"
+      TZ: ${TZ:-UTC}
+    volumes:
+      - samba-config:/etc/samba
+      - samba-db:/var/lib/samba
+      - manager-state:/var/lib/samba-manager
+      - samba-data:/srv/samba
+      - samba-homes:/home
+      - samba-logs:/var/log/samba
+
+volumes:
+  samba-config:
+  samba-db:
+  manager-state:
+  samba-data:
+  samba-homes:
+  samba-logs:

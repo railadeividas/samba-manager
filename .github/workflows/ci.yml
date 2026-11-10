@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Install tools the tests use
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends samba-common-bin acl
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - run: npm ci
+      - run: CI=true npm test -- --watchAll=false
+      - run: CI=true npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [go, ui]
+    steps:
+      - uses: actions/checkout@v4
+      - name: End-to-end test (Docker + real Samba)
+        run: ./scripts/e2e.sh

@@ -1,0 +1,47 @@
+# Samba Manager in Docker.
+#
+#   docker compose up -d --build
+#   docker compose logs samba-manager     # first start prints the generated admin password
+#
+# Web UI: http://localhost:8080      SMB: \\<host>\<share>   smb://<host>/<share>
+#
+# This file publishes the ports through Docker's bridge network, which is
+# enough for Windows, macOS and Linux clients that connect by address/name.
+# Automatic discovery (Windows "Network", macOS Finder sidebar) needs multicast
+# and therefore host networking: use docker-compose.host.yml instead.
+services:
+  samba-manager:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    image: samba-manager:local
+    hostname: ${SAMBA_NETBIOS_NAME:-samba-manager}
+    restart: unless-stopped
+    ports:
+      - "${UI_PORT:-8080}:8080"
+      - "${SMB_PORT:-445}:445"
+      - "${NETBIOS_SESSION_PORT:-139}:139"
+      - "${NETBIOS_NS_PORT:-137}:137/udp"
+      - "${NETBIOS_DGM_PORT:-138}:138/udp"
+    environment:
+      # Leave empty to get a random password in `docker compose logs`.
+      SAMBA_MANAGER_PASSWORD: ${SAMBA_MANAGER_PASSWORD:-}
+      SAMBA_WORKGROUP: ${SAMBA_WORKGROUP:-WORKGROUP}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - samba-config:/etc/samba          # smb.conf
+      - samba-db:/var/lib/samba          # Samba password database
+      - manager-state:/var/lib/samba-manager  # users/groups list, config backups, admin password hash
+      - samba-data:/srv/samba            # shared data (use a bind mount for existing files)
+      # - /path/on/host:/srv/samba       # <- example: share an existing directory
+      - samba-homes:/home
+      - samba-logs:/var/log/samba
+
+volumes:
+  samba-config:
+  samba-db:
+  manager-state:
+  samba-data:
+  samba-homes:
+  samba-logs:

@@ -88,57 +88,45 @@ export const saveRawConfig = async (content) => {
 };
 
 /**
- * Get all shares from the config
- * @returns {Promise<Object>} - Shares data
+ * Get all shares (special sections such as [global] and [homes] are excluded).
+ * Besides the smb.conf parameters each share carries manager settings with a
+ * leading underscore: _access ("samba" | "acl"), _owner, _group, _permissions.
+ * @returns {Promise<Object>} - Shares data keyed by name
  */
 export const getShares = async () => {
-  try {
-    const response = await api.get('/config');
-    const config = response.data.config;
-    const shares = {};
-
-    // Filter out special sections
-    Object.entries(config).forEach(([section, params]) => {
-      if (!SPECIAL_SECTIONS.includes(section)) {
-        shares[section] = params;
-      }
-    });
-
-    return shares;
-  } catch (error) {
-    throw error;
-  }
+  const response = await api.get('/shares');
+  return response.data;
 };
 
 /**
- * Get a specific share from the config
+ * Get a specific share
  * @param {string} shareName - Share name
  * @returns {Promise<Object>} - Share data
  */
 export const getShare = async (shareName) => {
-  try {
-    const response = await api.get(`/config/sections/${shareName}`);
-    return response.data[shareName];
-  } catch (error) {
-    throw error;
-  }
+  const response = await api.get(`/shares/${encodeURIComponent(shareName)}`);
+  return response.data[shareName];
 };
 
 /**
- * Create or update a share in the config
+ * Create or update a share in one step: directory, access control and
+ * smb.conf are handled together by the server. Empty values remove a parameter.
  * @param {string} shareName - Share name
- * @param {Object} shareData - Share configuration
+ * @param {Object} shareData - smb.conf parameters plus _access/_owner/_group/_permissions/_recursive
  * @returns {Promise<Object>} - Response
  */
 export const createUpdateShare = async (shareName, shareData) => {
-  try {
-    const response = await api.post(`/config/sections/${shareName}`, {
-      [shareName]: shareData
-    });
-    return response.data;
-  } catch (error) {
-    throw error;
-  }
+  const response = await api.post(`/shares/${encodeURIComponent(shareName)}`, shareData);
+  return response.data;
+};
+
+/**
+ * Delete a share (its files are left on disk)
+ * @param {string} shareName - Share name
+ */
+export const deleteShare = async (shareName) => {
+  const response = await api.delete(`/shares/${encodeURIComponent(shareName)}`);
+  return response.data;
 };
 
 export const deleteSection = async (sectionName) => {
@@ -152,7 +140,7 @@ export const deleteSection = async (sectionName) => {
 
 export const getShareACLs = async (shareName) => {
   try {
-    const response = await api.get(`/shares/${shareName}/acl`);
+    const response = await api.get(`/shares/${encodeURIComponent(shareName)}/acl`);
     return response.data;
   } catch (error) {
     throw error;

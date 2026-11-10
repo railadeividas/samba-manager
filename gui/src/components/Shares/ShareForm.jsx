@@ -15,10 +15,13 @@ import Checkbox from '@mui/material/Checkbox';
 import Grid from '@mui/material/Grid';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
-import InfoIcon from '@mui/icons-material/Info';
 import Box from '@mui/material/Box';
 import Autocomplete from '@mui/material/Autocomplete';
 import Chip from '@mui/material/Chip';
+import Alert from '@mui/material/Alert';
+import RadioGroup from '@mui/material/RadioGroup';
+import Radio from '@mui/material/Radio';
+import FormLabel from '@mui/material/FormLabel';
 import GroupsIcon from '@mui/icons-material/Groups';
 import PersonIcon from '@mui/icons-material/Person';
 import LockIcon from '@mui/icons-material/Lock';
@@ -27,8 +30,43 @@ import * as Yup from 'yup';
 import { createUpdateShare } from '../../services/configService';
 import { getUsers } from '../../services/usersService';
 import { getGroups } from '../../services/groupsService';
+import { getInfo } from '../../services/infoService';
 import { useNotification } from '../../context/NotificationContext';
-import api from '../../services/api';
+
+// Starting points for common kinds of shares. They only prefill the form.
+export const SHARE_TEMPLATES = {
+  standard: {
+    label: 'Standard share',
+    help: 'Named users can read and write; nobody else gets in.',
+    values: { browseable: 'yes', 'read only': 'no', 'guest ok': 'no' },
+    extra: {},
+  },
+  public: {
+    label: 'Public read-only (guests)',
+    help: 'Anyone on the network can read without a password. Windows 11 blocks guest access by default.',
+    values: { browseable: 'yes', 'read only': 'yes', 'guest ok': 'yes' },
+    extra: {},
+  },
+  timemachine: {
+    label: 'macOS Time Machine backup',
+    help: 'A backup target for Macs. Needs the cross-platform preset (Settings > Global) and works best with a Force User.',
+    values: { browseable: 'yes', 'read only': 'no', 'guest ok': 'no' },
+    extra: {
+      'vfs objects': 'catia fruit streams_xattr',
+      'fruit:time machine': 'yes',
+      'durable handles': 'yes',
+      'kernel oplocks': 'no',
+      'kernel share modes': 'no',
+      'posix locking': 'no',
+    },
+  },
+};
+
+// Parameters sent to the server even when empty, so clearing a field removes it.
+const FORM_PARAMS = [
+  'path', 'comment', 'browseable', 'read only', 'guest ok', 'valid users', 'write list',
+  'create mask', 'directory mask', 'force user', 'force group',
+];
 
 const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
   const { showNotification } = useNotification();
@@ -40,6 +78,14 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
   const [validUsersSelected, setValidUsersSelected] = useState([]);
   const [writeListSelected, setWriteListSelected] = useState([]);
   const [includeSystemGroups, setIncludeSystemGroups] = useState(false);
+  const [info, setInfo] = useState(null);
+  const [template, setTemplate] = useState('');
+  const [extraParams, setExtraParams] = useState({});
+  const [pathTouched, setPathTouched] = useState(false);
+
+  useEffect(() => {
+    getInfo().then(setInfo).catch(() => {});
+  }, []);
 
   // Load users and groups
   useEffect(() => {
@@ -106,9 +152,15 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
   const validationSchema = Yup.object({
     name: Yup.string()
       .required('Share name is required')
-      .matches(/^[a-zA-Z0-9_-]+$/, 'Share name can only contain letters, numbers, underscores, and hyphens'),
-    path: Yup.string().required('Path is required'),
+      .matches(/^[a-zA-Z0-9][a-zA-Z0-9 _.-]*$/, 'Use letters, numbers, spaces, dots, underscores and hyphens')
+      .max(80, 'Share name is too long')
+      .notOneOf(['global', 'printers', 'print$', 'homes'], 'This name is reserved'),
+    path: Yup.string().required('Path is required').matches(/^\//, 'Path must be absolute (start with /)'),
+    permissions: Yup.string().matches(/^([0-7]{3,4})?$/, 'Use an octal mode such as 0775'),
   });
+
+  const defaultRoot = (info && info.allowedRoots && info.allowedRoots[0]) || '/srv/samba';
+  const defaultAccess = shareData?._access || 'samba';
 
   // Initialize form with default values
   const formik = useFormik({
@@ -122,68 +174,39 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
       'valid users': shareData?.['valid users'] || '',
       'write list': shareData?.['write list'] || '',
       'create mask': shareData?.['create mask'] || '0664',
-      'directory mask': shareData?.['directory mask'] || '2775',
+      'directory mask': shareData?.['directory mask'] || '0775',
       'force user': shareData?.['force user'] || '',
       'force group': shareData?.['force group'] || '',
-      owner: shareData?.owner || '',
-      group: shareData?.group || '',
-      permissions: shareData?.permissions || '0755'
+      owner: shareData?._owner || '',
+      group: shareData?._group || '',
+      permissions: shareData?._permissions || (isEditMode ? '' : '0775'),
+      _access: defaultAccess,
+      _recursive: false,
     },
     validationSchema,
     onSubmit: async (values) => {
       try {
-        const shareName = values.name;
+        const shareName = values.name.trim();
 
         // Convert selections to comma-separated strings
-        const validUsersStr = validUsersSelected
-          .map(item => item.value)
-          .join(', ');
+        const validUsersStr = validUsersSelected.map(item => item.value).join(', ');
+        const writeListStr = writeListSelected.map(item => item.value).join(', ');
 
-        const writeListStr = writeListSelected
-          .map(item => item.value)
-          .join(', ');
+        // One request does everything: directory, access control and smb.conf.
+        const payload = { ...extraParams };
+        FORM_PARAMS.forEach((key) => { payload[key] = values[key] ?? ''; });
+        payload['valid users'] = validUsersStr;
+        payload['write list'] = writeListStr;
+        payload._access = values._access;
+        payload._owner = values.owner || '';
+        payload._group = values.group || '';
+        payload._permissions = values.permissions || '';
+        if (values._recursive) payload._recursive = 'yes';
 
-        // Helper function to filter out empty values
-        const filterEmptyValues = (obj) => {
-          return Object.fromEntries(
-            Object.entries(obj).filter(([_, value]) => value !== '' && value !== undefined && value !== null)
-          );
-        };
+        const result = await createUpdateShare(shareName, payload);
 
-        // Create share configuration object for Samba config
-        const sambaConfig = filterEmptyValues({
-          path: values.path,
-          comment: values.comment,
-          browseable: values.browseable,
-          'read only': values['read only'],
-          'guest ok': values['guest ok'],
-          'valid users': validUsersStr,
-          'write list': writeListStr,
-          'create mask': values['create mask'],
-          'directory mask': values['directory mask'],
-          'force user': values['force user'],
-          'force group': values['force group']
-        });
-
-        // Create directory setup object for ACLs and directory creation
-        const directoryConfig = filterEmptyValues({
-          path: values.path,
-          owner: values.owner,
-          group: values.group,
-          permissions: values.permissions,
-          'valid users': validUsersStr,
-          'write list': writeListStr
-        });
-
-        // First, update the share configuration
-        await createUpdateShare(shareName, sambaConfig);
-
-        // Then, create the share directory and set up ACLs
-        await api.post(`/shares/${shareName}`, directoryConfig);
-
-        // Show success message with details about what was done
         showNotification(
-          `Share "${shareName}" ${isEditMode ? 'updated' : 'created'} successfully. Directory created and ACLs set up.`,
+          result.message || `Share "${shareName}" ${isEditMode ? 'updated' : 'created'} successfully.`,
           'success'
         );
 
@@ -194,6 +217,28 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
       }
     },
   });
+
+  // Suggest a path from the name until the user types their own
+  useEffect(() => {
+    if (!isEditMode && !pathTouched && formik.values.name) {
+      const slug = formik.values.name.trim().replace(/[^A-Za-z0-9_.-]+/g, '_');
+      formik.setFieldValue('path', `${defaultRoot.replace(/\/$/, '')}/${slug}`, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formik.values.name, defaultRoot, pathTouched, isEditMode]);
+
+  const applyTemplate = (key) => {
+    setTemplate(key);
+    const t = SHARE_TEMPLATES[key];
+    if (!t) {
+      setExtraParams({});
+      return;
+    }
+    Object.entries(t.values).forEach(([k, v]) => formik.setFieldValue(k, v, false));
+    setExtraParams(t.extra);
+  };
+
+  const accessMode = formik.values._access;
 
   // Handle system groups toggle
   const handleSystemGroupsToggle = (event) => {
@@ -253,28 +298,86 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
           {isEditMode ? 'Edit Share' : 'Add Share'}
         </DialogTitle>
         <DialogContent>
-          <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'info.50', display: 'flex', alignItems: 'flex-start' }}>
-            <InfoIcon color="info" sx={{ mr: 1, mt: 0.5 }} />
-            <Box>
-              <Typography variant="subtitle2" color="info.main" gutterBottom>
-                Access Control List (ACL) Settings
-              </Typography>
-              <Typography variant="body2">
-                The system will automatically:
-              </Typography>
-              <Typography variant="body2" component="ul" sx={{ mt: 1, pl: 2 }}>
-                <li>Create the share directory if it doesn't exist</li>
-                <li>Set up Linux ACLs based on your "Valid Users" and "Write List" settings:</li>
-                <li style={{ marginLeft: '1.5rem' }}>• Users and groups in "Valid Users" will have read and execute permissions (r-x)</li>
-                <li style={{ marginLeft: '1.5rem' }}>• Users and groups in "Write List" will have read, write, and execute permissions (rwx)</li>
-                <li>Apply these permissions recursively to all files and directories</li>
-                <li>Set default ACLs for new files and directories</li>
-                <li>Use groups (prefixed with @) to give multiple users the same permissions</li>
-              </Typography>
-            </Box>
+          {!isEditMode && (
+            <FormControl fullWidth sx={{ mb: 1.5 }}>
+              <InputLabel id="template-label">Start from a template (optional)</InputLabel>
+              <Select
+                labelId="template-label"
+                id="template"
+                value={template}
+                label="Start from a template (optional)"
+                onChange={(e) => applyTemplate(e.target.value)}
+              >
+                <MenuItem value=""><em>None</em></MenuItem>
+                {Object.entries(SHARE_TEMPLATES).map(([key, t]) => (
+                  <MenuItem key={key} value={key}>{t.label}</MenuItem>
+                ))}
+              </Select>
+              {template && <FormHelperText>{SHARE_TEMPLATES[template].help}</FormHelperText>}
+            </FormControl>
+          )}
+
+          <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5 }}>
+            <FormControl>
+              <FormLabel id="access-mode-label">Who is allowed in, and how is it enforced?</FormLabel>
+              <RadioGroup
+                aria-labelledby="access-mode-label"
+                name="_access"
+                value={accessMode}
+                onChange={formik.handleChange}
+              >
+                <FormControlLabel
+                  value="samba"
+                  sx={{ alignItems: 'flex-start', '& .MuiRadio-root': { py: 0.5 } }}
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body1">Samba-only (recommended)</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Samba checks "Valid Users" and "Write List". Every file belongs to one account (Force User / Force Group),
+                        so there are no permission surprises between users.
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  value="acl"
+                  disabled={info && info.aclSupported === false}
+                  sx={{ alignItems: 'flex-start', '& .MuiRadio-root': { py: 0.5 } }}
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body1">POSIX ACL (per-user)</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        The filesystem enforces access with Linux ACLs: Valid Users get read, Write List users get write,
+                        and files keep their real owners. Also protects the files from other programs on the server.
+                        {info && info.aclSupported === false && ' (setfacl/getfacl are not installed on the server)'}
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </RadioGroup>
+            </FormControl>
+            {accessMode === 'samba' && !formik.values['force user'] && !formik.values['force group'] && (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                Tip: set a Force User or Force Group below so files created by different users stay editable by everyone allowed.
+              </Alert>
+            )}
+            {accessMode === 'acl' && isEditMode && (
+              <FormControlLabel
+                sx={{ mt: 1 }}
+                control={
+                  <Checkbox
+                    checked={formik.values._recursive}
+                    onChange={(e) => formik.setFieldValue('_recursive', e.target.checked)}
+                  />
+                }
+                label="Also apply the ACLs to files and folders that already exist (can take a while on large shares)"
+              />
+            )}
           </Paper>
 
-          <Grid container spacing={2} sx={{ mt: 1 }}>
+          <Grid container spacing={1.25} sx={{ mt: 0 }}>
             {/* Share name field */}
             <Grid item xs={12} md={6}>
               <TextField
@@ -302,10 +405,10 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                 label="Path"
                 variant="outlined"
                 value={formik.values.path}
-                onChange={formik.handleChange}
+                onChange={(e) => { setPathTouched(true); formik.handleChange(e); }}
                 onBlur={formik.handleBlur}
                 error={formik.touched.path && Boolean(formik.errors.path)}
-                helperText={formik.touched.path && formik.errors.path}
+                helperText={(formik.touched.path && formik.errors.path) || (info && info.allowedRoots ? `Must be inside: ${info.allowedRoots.join(', ')}` : '')}
                 required
               />
             </Grid>
@@ -323,7 +426,7 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                   <TextField
                     {...params}
                     label="Owner"
-                    helperText="Set the owner of the share directory"
+                    helperText="Owner of the share directory (leave empty to keep it)"
                   />
                 )}
               />
@@ -342,7 +445,7 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                   <TextField
                     {...params}
                     label="Group"
-                    helperText="Set the group of the share directory"
+                    helperText="Group of the share directory (leave empty to keep it)"
                   />
                 )}
               />
@@ -359,11 +462,8 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                 value={formik.values.permissions}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
-                helperText="Set the permissions of the share directory (e.g., 0755)"
-                inputProps={{
-                  pattern: "[0-7]{4}",
-                  title: "Please enter a valid octal permission (e.g., 0755)"
-                }}
+                helperText={formik.errors.permissions || "Mode of the share directory (e.g., 0775). Leave empty to keep it as is."}
+                error={Boolean(formik.errors.permissions)}
               />
             </Grid>
 
@@ -471,7 +571,7 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                     {...params}
                     label="Valid Users & Groups"
                     placeholder="Select users and groups"
-                    helperText="Users and groups with read & execute access (r-x)"
+                    helperText="Who may open the share (read access)"
                   />
                 )}
               />
@@ -496,7 +596,7 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                     {...params}
                     label="Write List (Users & Groups)"
                     placeholder="Select users and groups"
-                    helperText="Users and groups with read, write & execute access (rwx)"
+                    helperText="Who may change files (write access)"
                   />
                 )}
               />

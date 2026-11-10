@@ -1,105 +1,59 @@
+// Samba Manager: a web UI and API for managing a Samba file server.
 package main
 
 import (
-	"embed"
-	"io"
-	"io/fs"
-	"log"
-	"net/http"
-	"path"
-	"samba-manager/internal/api"
-	"samba-manager/internal/config"
-	"strings"
-	"time"
+	"fmt"
+	"os"
 )
 
-//go:embed gui/build
-var reactApp embed.FS
+// version is set at build time: -ldflags "-X main.version=1.2.3".
+var version = "dev"
+
+const usage = `Samba Manager %s
+
+Usage: samba-manager <command> [flags]
+
+Commands:
+  serve         Run the web UI and API (default)
+  install       Install or upgrade the binary, config and systemd service
+  uninstall     Remove the systemd service and binary (--purge also removes config and state)
+  doctor        Check that everything Samba Manager needs is installed
+  healthcheck   Exit 0 if a running instance (and Samba) is healthy
+  version       Print the version
+
+Run "samba-manager <command> -h" for the flags of a command.
+`
 
 func main() {
-	log.Println("Starting Samba Manager...")
+	cmd := "serve"
+	args := os.Args[1:]
+	if len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
+		cmd, args = args[0], args[1:]
+	}
 
-	// Load configuration
-	cfg := config.LoadConfig()
-
-	// Set config in API
-	api.SetConfigPath(cfg.Samba.ConfigPath)
-
-	// Set auth config
-	api.SetAuthConfig(cfg.Auth.Username, cfg.Auth.Password)
-
-	// Set up API handlers
-	apiHandler := api.NewAPIHandler()
-
-	// Set up React app file system
-	reactFS, err := fs.Sub(reactApp, "gui/build")
+	var err error
+	switch cmd {
+	case "serve":
+		err = runServe(args)
+	case "install":
+		err = runInstall(args)
+	case "uninstall":
+		err = runUninstall(args)
+	case "doctor":
+		err = runDoctor(args)
+	case "healthcheck":
+		err = runHealthcheck(args)
+	case "version", "--version":
+		fmt.Println(version)
+	case "help", "-h", "--help":
+		fmt.Printf(usage, version)
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
+		fmt.Fprintf(os.Stderr, usage, version)
+		os.Exit(2)
+	}
 	if err != nil {
-		log.Fatalf("Failed to create sub filesystem for React app: %v", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
 	}
-
-	// Create HTTP server with routes
-	mux := http.NewServeMux()
-
-	// API routes with authentication middleware
-	mux.Handle("/api/", api.BasicAuthMiddleware(http.StripPrefix("/api", apiHandler)))
-
-	// React app static files - no authentication for static content
-	fileServer := http.FileServer(http.FS(reactFS))
-
-	// Public static files (no auth)
-	mux.Handle("/static/", fileServer)
-	mux.Handle("/assets/", fileServer)
-	mux.Handle("/favicon.ico", fileServer)
-	mux.Handle("/manifest.json", fileServer)
-	mux.Handle("/logo", fileServer)
-
-	// All other routes - serve index.html for SPA routing (no auth for the HTML)
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// For API routes that don't match, return 404
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			http.NotFound(w, r)
-			return
-		}
-
-		// Serve index.html directly (no auth)
-		serveIndexHTML(w, r, reactFS)
-	})
-
-	// Start server
-	port := cfg.Manager.Port
-	log.Printf("Server started on http://localhost:%s", port)
-
-	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
-	log.Fatal(server.ListenAndServe())
-}
-
-// Helper function to serve index.html
-func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
-	indexPath := path.Join("index.html")
-	indexFile, err := fsys.Open(indexPath)
-	if err != nil {
-		log.Printf("Error opening index.html: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	defer indexFile.Close()
-
-	// Read the file content
-	content, err := io.ReadAll(indexFile)
-	if err != nil {
-		log.Printf("Error reading index.html: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	// Set content type and serve the file
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(content)
 }

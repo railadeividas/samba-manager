@@ -21,11 +21,12 @@ const UserForm = ({ open, onSubmit, onClose }) => {
   const validationSchema = Yup.object({
     username: Yup.string()
       .required('Username is required')
-      .matches(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscores, and hyphens')
-      .min(3, 'Username must be at least 3 characters'),
+      .matches(/^[a-z_][a-z0-9_-]*$/, 'Use lowercase letters, numbers, underscores and hyphens, starting with a letter or underscore')
+      .min(3, 'Username must be at least 3 characters')
+      .max(32, 'Username must be at most 32 characters'),
     password: Yup.string()
       .required('Password is required')
-      .min(6, 'Password must be at least 6 characters'),
+      .min(8, 'Password must be at least 8 characters'),
     confirmPassword: Yup.string()
       .required('Please confirm your password')
       .oneOf([Yup.ref('password'), null], 'Passwords must match'),

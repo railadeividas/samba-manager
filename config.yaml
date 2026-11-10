@@ -1,10 +1,31 @@
+# Samba Manager configuration (all values are optional; shown here are the defaults).
+# Every setting can also be given as an environment variable, see the README.
 manager:
   port: "8080"
-  host: "localhost"
+  host: "0.0.0.0"          # use 127.0.0.1 to listen on this machine only
+  tls:                     # set both to serve HTTPS
+    cert: ""
+    key: ""
 
 samba:
   configPath: "/etc/samba/smb.conf"
+  serviceMode: auto        # auto | systemd | process
+  allowedRoots:            # shares may only live below these directories
+    - /srv/samba
+  logDir: /var/log/samba
 
 auth:
-  username: "admin"
-  password: "admin"
+  username: admin
+  # Leave the password out: a random one is generated on first start and shown once.
+  # Plain text or a bcrypt hash ($2a$...) is accepted. A password changed in the
+  # web UI is stored in the state directory and takes precedence.
+  # password: ""
+
+state:
+  dir: /var/lib/samba-manager   # users/groups list, config backups, admin password hash
+
+supervisor:                # run smbd/nmbd as child processes (for containers)
+  enabled: false
+  nmbd: true
+  wsdd: false              # Windows discovery (needs wsdd2)
+  avahi: false             # macOS/Linux discovery (needs avahi-daemon + dbus)

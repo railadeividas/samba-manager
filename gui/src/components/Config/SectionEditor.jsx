@@ -75,11 +75,13 @@ const SectionEditor = ({
 }) => {
   const { showNotification } = useNotification();
   const [sectionData, setSectionData] = useState({});
+  // eslint-disable-next-line no-unused-vars
   const [originalData, setOriginalData] = useState({});
   const [newParam, setNewParam] = useState({ key: '', value: '' });
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [saveError, setSaveError] = useState(null);
 
   // Use the API hook to fetch the section data
@@ -100,6 +102,13 @@ const SectionEditor = ({
       setHasChanges(false);
     }
   }, [data]);
+
+  // Reload when another component (e.g. the cross-platform preset) changed the config
+  useEffect(() => {
+    const onChanged = () => fetchSection(true);
+    window.addEventListener('config-changed', onChanged);
+    return () => window.removeEventListener('config-changed', onChanged);
+  }, [fetchSection]);
 
   // Parameter change handler
   const handleParamChange = (key, value) => {

@@ -56,6 +56,10 @@ api.interceptors.response.use(
   (response) => {
     // Clear failed timestamp on successful response
     apiFailedTimestamp = 0;
+    // Successful calls may carry a warning (for example "saved, but Samba could not be reloaded")
+    if (response.data && typeof response.data.warning === 'string' && response.data.warning) {
+      window.dispatchEvent(new CustomEvent('api-warning', { detail: response.data.warning }));
+    }
     return response;
   },
   (error) => {

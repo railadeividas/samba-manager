@@ -69,6 +69,7 @@ const homeTemplates = {
 const UserHomesPage = () => {
   const { showNotification } = useNotification();
   const [homesConfig, setHomesConfig] = useState({});
+  // eslint-disable-next-line no-unused-vars
   const [originalHomesConfig, setOriginalHomesConfig] = useState({});
   const [homesEnabled, setHomesEnabled] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
@@ -82,6 +83,7 @@ const UserHomesPage = () => {
   // Fetch users data
   const {
     data: usersData,
+    // eslint-disable-next-line no-unused-vars
     loading: usersLoading
   } = useApi(getUsers);
 
