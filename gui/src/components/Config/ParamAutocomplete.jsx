@@ -6,6 +6,7 @@ import {
   Typography,
   Chip,
   ListItem,
+  // eslint-disable-next-line no-unused-vars
   ListItemText
 } from '@mui/material';
 import {
@@ -34,6 +35,7 @@ const ParamAutocomplete = ({
 }) => {
   const [availableParams, setAvailableParams] = useState([]);
   const [inputValue, setInputValue] = useState('');
+  // eslint-disable-next-line no-unused-vars
   const [paramDescriptions, setParamDescriptions] = useState({});
 
   // Load available parameters and descriptions based on section

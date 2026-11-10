@@ -19,7 +19,7 @@ const PasswordForm = ({ open, username, onSubmit, onClose }) => {
   const validationSchema = Yup.object({
     password: Yup.string()
       .required('Password is required')
-      .min(6, 'Password must be at least 6 characters'),
+      .min(8, 'Password must be at least 8 characters'),
     confirmPassword: Yup.string()
       .required('Please confirm your password')
       .oneOf([Yup.ref('password'), null], 'Passwords must match')

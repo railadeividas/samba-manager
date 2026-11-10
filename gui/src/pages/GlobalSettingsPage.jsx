@@ -10,6 +10,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import PrintIcon from '@mui/icons-material/Print';
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
 import SectionEditor from '../components/Config/SectionEditor';
+import CrossPlatformPreset from '../components/Config/CrossPlatformPreset';
 
 // Tab panel component
 function TabPanel(props) {
@@ -84,6 +85,8 @@ const GlobalSettingsPage = () => {
           Changes are applied to the configuration file when you save.
         </Typography>
       </Paper>
+
+      <CrossPlatformPreset />
 
       <Paper
         elevation={1}

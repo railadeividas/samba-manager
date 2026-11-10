@@ -1,30 +1,34 @@
 package api
 
 import (
-	"encoding/json"
+	"bufio"
+	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"samba-manager/internal/system"
 )
 
-// DiskInfo represents information about a filesystem
+// DiskInfo describes a mounted filesystem.
 type DiskInfo struct {
 	Filesystem  string  `json:"filesystem"`
-	Mount       string  `json:"mount"`
 	Size        string  `json:"size"`
 	Used        string  `json:"used"`
 	Available   string  `json:"available"`
 	UsePercent  float64 `json:"usePercent"`
 	MountedOn   string  `json:"mountedOn"`
-	DisplayName string  `json:"displayName"`  // Short version of the mount path
+	DisplayName string  `json:"displayName"`
 	IsVirtualFS bool    `json:"isVirtualFS,omitempty"`
 }
 
-// ShareSizeInfo represents size information for a Samba share
+// ShareSizeInfo describes how much space a share uses.
 type ShareSizeInfo struct {
 	Name       string  `json:"name"`
 	Path       string  `json:"path"`
@@ -34,327 +38,201 @@ type ShareSizeInfo struct {
 	UsePercent float64 `json:"usePercent"`
 }
 
-// DisksResponse represents the response for filesystem info
-type DisksResponse struct {
-	Disks []DiskInfo `json:"disks"`
-	Error string     `json:"error,omitempty"`
+const cacheDuration = time.Minute
+
+type cached[T any] struct {
+	mu   sync.Mutex
+	at   time.Time
+	data T
 }
 
-// ShareSizesResponse represents the response for share sizes
-type ShareSizesResponse struct {
-	Shares []ShareSizeInfo `json:"shares"`
-	Error  string          `json:"error,omitempty"`
+func (c *cached[T]) get(fn func() (T, error)) (T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.at.IsZero() && time.Since(c.at) < cacheDuration {
+		return c.data, nil
+	}
+	v, err := fn()
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	c.data, c.at = v, time.Now()
+	return v, nil
 }
 
-// Cache for filesystem information with a mutex for safe concurrent access
 var (
-	disksCache        DisksResponse
-	disksCacheMux     sync.RWMutex
-	disksCacheTime    time.Time
-
-	shareSizesCache      ShareSizesResponse
-	shareSizesCacheMux   sync.RWMutex
-	shareSizesCacheTime  time.Time
-
-	cacheDuration     = time.Minute // Cache duration set to 1 minute
+	disksCache  cached[[]DiskInfo]
+	sharesCache cached[[]ShareSizeInfo]
 )
 
-// Virtual filesystem types
-var virtualFilesystemTypes = map[string]bool{
-	"none":    true,
-	"udev":    true,
-	"tmpfs":   true,
-	"overlay": true,
+var virtualFS = map[string]bool{
+	"tmpfs": true, "devtmpfs": true, "overlay": true, "squashfs": true,
+	"proc": true, "sysfs": true, "devpts": true, "cgroup": true, "cgroup2": true,
+	"mqueue": true, "ramfs": true, "efivarfs": true, "securityfs": true,
 }
 
-// GetFileSystemSizes returns information about system filesystems
-func (h *APIHandler) GetFileSystemSizes(w http.ResponseWriter, r *http.Request) {
-	info, err := GetFileSystemSizes()
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
+// humanSize formats bytes like `df -h`.
+func humanSize(b uint64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%dB", b)
 	}
-
-	json.NewEncoder(w).Encode(info)
-}
-
-// GetShareSizes returns size information for Samba shares
-func (h *APIHandler) GetShareSizes(w http.ResponseWriter, r *http.Request) {
-	info, err := getShareSizes()
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(info)
-}
-
-// GetFileSystemSizes returns information about system filesystems using df command with caching
-func GetFileSystemSizes() (DisksResponse, error) {
-	disksCacheMux.RLock()
-	// If cache is still valid, return cached data
-	if !disksCacheTime.IsZero() && time.Since(disksCacheTime) < cacheDuration {
-		defer disksCacheMux.RUnlock()
-		return disksCache, nil
-	}
-	disksCacheMux.RUnlock()
-
-	// Acquire write lock to update cache
-	disksCacheMux.Lock()
-	defer disksCacheMux.Unlock()
-
-	// Double-check if cache was updated while waiting for the lock
-	if !disksCacheTime.IsZero() && time.Since(disksCacheTime) < cacheDuration {
-		return disksCache, nil
-	}
-
-	// Get list of shares to mark mounts that are used for Samba shares
-	shares, err := ReadConfig()
-	if err != nil {
-		return DisksResponse{}, err
-	}
-
-	// Set of paths used by Samba shares
-	sambaPaths := make(map[string]bool)
-	for _, share := range shares {
-		if path, ok := share["path"]; ok {
-			sambaPaths[path] = true
-		}
-	}
-
-	// Execute df command to get filesystem usage
-	cmd := exec.Command("df", "-h")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return DisksResponse{}, err
-	}
-
-	// Parse output
-	lines := strings.Split(string(output), "\n")
-	var disks []DiskInfo
-
-	// Skip header line
-	for i := 1; i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-
-		// Split by whitespace with special handling for filesystems with spaces
-		fields := strings.Fields(line)
-		if len(fields) < 6 {
-			continue
-		}
-
-		// Extract percentage and convert to float
-		usePercentStr := strings.TrimSuffix(fields[4], "%")
-		usePercent, _ := strconv.ParseFloat(usePercentStr, 64)
-
-		// Get mount path and create a display name (shortened if too long)
-		mountPath := fields[5]
-		displayName := createDisplayName(mountPath)
-
-		// Get filesystem type and check if it's a virtual filesystem
-		fsType := fields[0]
-		isVirtualFS := virtualFilesystemTypes[fsType]
-
-		// Create filesystem info
-		filesystem := DiskInfo{
-			Filesystem:  fsType,
-			Size:        fields[1],
-			Used:        fields[2],
-			Available:   fields[3],
-			UsePercent:  usePercent,
-			MountedOn:   mountPath,
-			DisplayName: displayName,
-			IsVirtualFS: isVirtualFS,
-		}
-
-		disks = append(disks, filesystem)
-	}
-
-	// Update cache
-	disksCache = DisksResponse{
-		Disks: disks,
-	}
-	disksCacheTime = time.Now()
-
-	return disksCache, nil
-}
-
-// getShareSizes returns size information for Samba shares with caching
-func getShareSizes() (ShareSizesResponse, error) {
-	shareSizesCacheMux.RLock()
-	// If cache is still valid, return cached data
-	if !shareSizesCacheTime.IsZero() && time.Since(shareSizesCacheTime) < cacheDuration {
-		defer shareSizesCacheMux.RUnlock()
-		return shareSizesCache, nil
-	}
-	shareSizesCacheMux.RUnlock()
-
-	// Acquire write lock to update cache
-	shareSizesCacheMux.Lock()
-	defer shareSizesCacheMux.Unlock()
-
-	// Double-check if cache was updated while waiting for the lock
-	if !shareSizesCacheTime.IsZero() && time.Since(shareSizesCacheTime) < cacheDuration {
-		return shareSizesCache, nil
-	}
-
-	// Get filesystem information first to get mount points and sizes
-	filesystemsInfo, err := GetFileSystemSizes()
-	if err != nil {
-		return ShareSizesResponse{}, err
-	}
-
-	// Get list of shares
-	shares, err := ReadConfig()
-	if err != nil {
-		return ShareSizesResponse{}, err
-	}
-
-	// Create a map of mount points to filesystem info for quick lookup
-	mountMap := make(map[string]DiskInfo)
-	for _, filesystem := range filesystemsInfo.Disks {
-		mountMap[filesystem.MountedOn] = filesystem
-	}
-
-	// Calculate share sizes
-	var shareSizes []ShareSizeInfo
-
-	for name, share := range shares {
-		path, ok := share["path"]
-		if !ok {
-			continue // Skip shares without a path
-		}
-
-		// Find the best matching mount for this share path
-		var bestMount string
-		for mountPath := range mountMap {
-			if strings.HasPrefix(path, mountPath) {
-				if bestMount == "" || len(mountPath) > len(bestMount) {
-					bestMount = mountPath
-				}
+	v := float64(b)
+	for _, u := range []string{"K", "M", "G", "T", "P"} {
+		v /= unit
+		if v < unit || u == "P" {
+			if v < 10 {
+				return fmt.Sprintf("%.1f%s", v, u)
 			}
+			return fmt.Sprintf("%.0f%s", v, u)
 		}
-
-		if bestMount == "" {
-			// Couldn't find a matching mount, skip
-			continue
-		}
-
-		// Get filesystem info for the mount
-		filesystemInfo := mountMap[bestMount]
-
-		// Get directory size using du command
-		cmd := exec.Command("du", "-sh", path)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			// Skip if we can't get the directory size
-			continue
-		}
-
-		// Parse the output
-		parts := strings.Fields(string(output))
-		if len(parts) < 2 {
-			continue
-		}
-
-		dirSize := parts[0]
-
-		// Parse directory size to calculate usage percentage
-		sizeStr := filesystemInfo.Size
-		usedStr := dirSize
-
-		// Normalize size units for calculation
-		sizeBytes, _ := convertSizeToBytes(sizeStr)
-		usedBytes, _ := convertSizeToBytes(usedStr)
-
-		var usePercent float64
-		if sizeBytes > 0 {
-			usePercent = float64(usedBytes) / float64(sizeBytes) * 100
-		}
-
-		// Create share size info
-		shareSizeInfo := ShareSizeInfo{
-			Name:       name,
-			Path:       path,
-			Size:       sizeStr,                   // Total size of the mounted filesystem
-			Used:       usedStr,                   // Used space by the share directory
-			Available:  filesystemInfo.Available,  // Available space on the filesystem
-			UsePercent: usePercent,               // Share directory usage as percentage of filesystem
-		}
-
-		shareSizes = append(shareSizes, shareSizeInfo)
 	}
-
-	// Update cache
-	shareSizesCache = ShareSizesResponse{
-		Shares: shareSizes,
-	}
-	shareSizesCacheTime = time.Now()
-
-	return shareSizesCache, nil
+	return ""
 }
 
-// createDisplayName creates a shortened display name for long mount paths
+func statfs(path string) (total, free, avail uint64, err error) {
+	var st syscall.Statfs_t
+	if err = syscall.Statfs(path, &st); err != nil {
+		return
+	}
+	bs := uint64(st.Bsize)
+	return st.Blocks * bs, st.Bfree * bs, st.Bavail * bs, nil
+}
+
 func createDisplayName(mountPath string) string {
-	// If the path is short enough, use it as is
 	if len(mountPath) <= 20 {
 		return mountPath
 	}
-
-	// For long paths, use a combination of the beginning and end
 	parts := strings.Split(mountPath, "/")
 	if len(parts) <= 3 {
-		return mountPath // Not a long hierarchical path
+		return mountPath
 	}
-
-	// Create a shorter name: /first/…/last
 	return "/" + parts[1] + "/…/" + parts[len(parts)-1]
 }
 
-// convertSizeToBytes converts human-readable size to bytes
-func convertSizeToBytes(size string) (uint64, error) {
-	size = strings.TrimSpace(size)
-	if size == "" {
-		return 0, fmt.Errorf("Empty size string")
-	}
-
-	// Handle units - find the numeric part and the unit
-	var numPart string
-	var unit string
-	for i, c := range size {
-		if (c < '0' || c > '9') && c != '.' {
-			numPart = size[:i]
-			unit = strings.ToUpper(size[i:])
-			break
-		}
-		if i == len(size)-1 {
-			numPart = size
-			unit = "B"
-		}
-	}
-
-	// Parse the numeric part
-	num, err := strconv.ParseFloat(numPart, 64)
+func listFilesystems() ([]DiskInfo, error) {
+	f, err := os.Open("/proc/mounts")
 	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	seen := map[string]bool{}
+	disks := []DiskInfo{}
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 3 {
+			continue
+		}
+		dev, mount, fstype := fields[0], strings.ReplaceAll(fields[1], `\040`, " "), fields[2]
+		if seen[mount] || strings.HasPrefix(mount, "/proc") || strings.HasPrefix(mount, "/sys") || strings.HasPrefix(mount, "/dev") {
+			continue
+		}
+		if fi, err := os.Stat(mount); err != nil || !fi.IsDir() {
+			continue // bind-mounted files such as /etc/hosts
+		}
+		total, free, avail, err := statfs(mount)
+		if err != nil || total == 0 {
+			continue
+		}
+		seen[mount] = true
+		used := total - free
+		pct := 0.0
+		if used+avail > 0 {
+			pct = float64(used) / float64(used+avail) * 100
+		}
+		disks = append(disks, DiskInfo{
+			Filesystem:  dev,
+			Size:        humanSize(total),
+			Used:        humanSize(used),
+			Available:   humanSize(avail),
+			UsePercent:  float64(int(pct + 0.5)),
+			MountedOn:   mount,
+			DisplayName: createDisplayName(mount),
+			IsVirtualFS: virtualFS[fstype],
+		})
+	}
+	return disks, sc.Err()
+}
+
+func (s *Server) getFileSystems(w http.ResponseWriter, r *http.Request) error {
+	disks, err := disksCache.get(listFilesystems)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"disks": disks})
+	return nil
+}
+
+func dirSize(ctx context.Context, path string) (uint64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "du", "-sb", "--", path).Output()
+	if err != nil && len(out) == 0 {
 		return 0, err
 	}
-
-	// Convert based on unit
-	unit = strings.TrimSpace(unit)
-	var multiplier uint64 = 1
-	switch unit {
-	case "K", "KB":
-		multiplier = 1024
-	case "M", "MB":
-		multiplier = 1024 * 1024
-	case "G", "GB":
-		multiplier = 1024 * 1024 * 1024
-	case "T", "TB":
-		multiplier = 1024 * 1024 * 1024 * 1024
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 {
+		return 0, fmt.Errorf("unexpected du output")
 	}
+	return strconv.ParseUint(fields[0], 10, 64)
+}
 
-	return uint64(num * float64(multiplier)), nil
+func (s *Server) computeShareSizes(ctx context.Context) ([]ShareSizeInfo, error) {
+	f, err := s.Store.Read()
+	if err != nil {
+		return nil, err
+	}
+	type job struct{ name, path string }
+	var jobs []job
+	for _, sec := range f.Sections {
+		if system.ReservedSections[strings.ToLower(sec.Name)] {
+			continue
+		}
+		if p, ok := sec.Get("path"); ok && p != "" {
+			jobs = append(jobs, job{sec.Name, p})
+		}
+	}
+	results := make([]*ShareSizeInfo, len(jobs))
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for i, j := range jobs {
+		wg.Add(1)
+		go func(i int, j job) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			total, _, avail, err := statfs(j.path)
+			if err != nil {
+				return // directory missing: skip
+			}
+			info := &ShareSizeInfo{Name: j.name, Path: j.path, Size: humanSize(total), Available: humanSize(avail), Used: "N/A"}
+			if used, err := dirSize(ctx, j.path); err == nil {
+				info.Used = humanSize(used)
+				if total > 0 {
+					info.UsePercent = float64(used) / float64(total) * 100
+				}
+			}
+			results[i] = info
+		}(i, j)
+	}
+	wg.Wait()
+	out := []ShareSizeInfo{}
+	for _, r := range results {
+		if r != nil {
+			out = append(out, *r)
+		}
+	}
+	return out, nil
+}
+
+func (s *Server) getShareSizes(w http.ResponseWriter, r *http.Request) error {
+	shares, err := sharesCache.get(func() ([]ShareSizeInfo, error) { return s.computeShareSizes(r.Context()) })
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"shares": shares})
+	return nil
 }

@@ -26,6 +26,7 @@ export const useApi = (fetchFunction, fetchArgs = [], dependencies = [], loadOnM
   useEffect(() => {
     lastArgsRef.current = fetchArgs;
     lastFetchFunctionRef.current = fetchFunction;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchFunction, ...fetchArgs]);
 
   // Function to fetch data with error handling

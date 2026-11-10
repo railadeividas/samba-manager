@@ -18,6 +18,9 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import TuneIcon from '@mui/icons-material/Tune';
 import HomeIcon from '@mui/icons-material/Home';
 import CodeIcon from '@mui/icons-material/Code';
+import DevicesIcon from '@mui/icons-material/Devices';
+import ArticleIcon from '@mui/icons-material/Article';
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -38,7 +41,7 @@ const Sidebar = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Check if we're in any settings page
-  const isInSettingsSection = ['/settings/homes', '/settings/global', '/settings/advanced'].includes(location.pathname);
+  const isInSettingsSection = ['/settings/homes', '/settings/global', '/settings/advanced', '/settings/account'].includes(location.pathname);
 
   // Auto-open settings section if we're in a settings page
   React.useEffect(() => {
@@ -52,12 +55,15 @@ const Sidebar = () => {
     { text: 'Shares', icon: <FolderSharedIcon />, path: '/shares' },
     { text: 'Users', icon: <PeopleIcon />, path: '/users' },
     { text: 'Groups', icon: <GroupsIcon />, path: '/groups' },
+    { text: 'Connected clients', icon: <DevicesIcon />, path: '/sessions' },
+    { text: 'Logs', icon: <ArticleIcon />, path: '/logs' },
   ];
 
   const settingsMenuItems = [
     { text: 'User Homes', icon: <HomeIcon />, path: '/settings/homes' },
     { text: 'Global & Printers', icon: <TuneIcon />, path: '/settings/global' },
     { text: 'Advanced Editor', icon: <CodeIcon />, path: '/settings/advanced' },
+    { text: 'Account', icon: <ManageAccountsIcon />, path: '/settings/account' },
   ];
 
   const drawerWidth = sidebarOpen ? 240 : 64;

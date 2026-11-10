@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 
@@ -18,14 +18,21 @@ export const NotificationProvider = ({ children }) => {
   });
 
   // Function to show a notification
-  const showNotification = (message, severity = 'info', duration = 6000) => {
+  const showNotification = useCallback((message, severity = 'info', duration = 6000) => {
     setNotification({
       open: true,
       message,
       severity,
       duration
     });
-  };
+  }, []);
+
+  // Warnings returned by the API (see services/api.js) are shown as toasts
+  useEffect(() => {
+    const onWarning = (event) => showNotification(event.detail, 'warning', 12000);
+    window.addEventListener('api-warning', onWarning);
+    return () => window.removeEventListener('api-warning', onWarning);
+  }, [showNotification]);
 
   // Function to close the notification
   const closeNotification = (event, reason) => {

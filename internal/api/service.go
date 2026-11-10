@@ -1,121 +1,125 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os/exec"
+	"os"
 	"strings"
 	"time"
-	"regexp"
+
+	"samba-manager/internal/system"
 )
 
-// GetServiceStatus returns the Samba service status
-func (h *APIHandler) GetServiceStatus(w http.ResponseWriter, r *http.Request) {
-	status, err := getSambaServiceStatus()
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(status)
+// ServiceStatusResponse is the Samba service status.
+type ServiceStatusResponse struct {
+	Service  string         `json:"service"`
+	Active   bool           `json:"active"`
+	Status   string         `json:"status"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
-// RestartService restarts the Samba service
-func (h *APIHandler) RestartService(w http.ResponseWriter, r *http.Request) {
-	err := restartSambaService()
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
+func formatUptime(d time.Duration) string {
+	days := int(d.Hours() / 24)
+	hours := int(d.Hours()) % 24
+	minutes := int(d.Minutes()) % 60
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
+	case hours > 0:
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	default:
+		return fmt.Sprintf("%dm", minutes)
 	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(APIResponse{
-		Status:  "success",
-		Message: "Service restarted successfully",
-	})
 }
 
-// getSambaServiceStatus returns the Samba service status
-func getSambaServiceStatus() (ServiceStatusResponse, error) {
-	// Check if service is active
-	cmdStatus := exec.Command("systemctl", "is-active", "smbd")
-	outputStatus, _ := cmdStatus.CombinedOutput()
-	isActive := strings.TrimSpace(string(outputStatus)) == "active"
-
-	// Add uptime data to the response
-	uptimeData := map[string]string{
-		"uptime": "N/A",
-		"since": "",
+func (s *Server) getStatus(w http.ResponseWriter, r *http.Request) error {
+	st, err := s.Svc.Status(r.Context())
+	if err != nil {
+		return err
 	}
-
-	// If service is active, get uptime information
-	if isActive {
-		// Get the service start time
-		cmdUptime := exec.Command("systemctl", "show", "smbd", "--property=ActiveEnterTimestamp")
-		outputUptime, err := cmdUptime.CombinedOutput()
-		if err == nil {
-			// Parse the output to get the timestamp
-			timestampLine := strings.TrimSpace(string(outputUptime))
-			re := regexp.MustCompile(`ActiveEnterTimestamp=(.+)`)
-			matches := re.FindStringSubmatch(timestampLine)
-
-			if len(matches) > 1 {
-				// Parse the timestamp
-				startTimeStr := matches[1]
-				// Format: "Day YYYY-MM-DD HH:MM:SS UTC"
-				layout := "Mon 2006-01-02 15:04:05 MST"
-				startTime, err := time.Parse(layout, startTimeStr)
-
-				if err == nil {
-					// Calculate uptime
-					uptime := time.Since(startTime)
-					days := int(uptime.Hours() / 24)
-					hours := int(uptime.Hours()) % 24
-					minutes := int(uptime.Minutes()) % 60
-
-					// Format uptime string
-					if days > 0 {
-						uptimeData["uptime"] = fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
-					} else if hours > 0 {
-						uptimeData["uptime"] = fmt.Sprintf("%dh %dm", hours, minutes)
-					} else {
-						uptimeData["uptime"] = fmt.Sprintf("%dm", minutes)
-					}
-
-					// Format the uptime since date in more readable format
-					uptimeData["since"] = startTime.Format("Jan 2, 2006 15:04:05")
-				}
-			}
-		}
+	uptime := map[string]string{"uptime": "N/A", "since": ""}
+	if st.Active && !st.Since.IsZero() {
+		uptime["uptime"] = formatUptime(time.Since(st.Since))
+		uptime["since"] = st.Since.Format("Jan 2, 2006 15:04:05")
 	}
-
-	// Create metadata to include uptime information
-	metadata := map[string]interface{}{
-		"uptime": uptimeData,
+	status := "stopped"
+	if st.Active {
+		status = "running"
 	}
-
-	return ServiceStatusResponse{
+	writeJSON(w, http.StatusOK, ServiceStatusResponse{
 		Service: "smbd",
-		Active:  isActive,
-		Status:  map[bool]string{true: "running", false: "stopped"}[isActive],
-		Metadata: metadata,
-	}, nil
+		Active:  st.Active,
+		Status:  status,
+		Metadata: map[string]any{
+			"uptime":  uptime,
+			"backend": st.Backend,
+		},
+	})
+	return nil
 }
 
-// restartSambaService restarts the Samba service and refreshes ACLs
-func restartSambaService() error {
-	// Refresh ACLs first
-	// if err := refreshShareACLs(); err != nil {
-	// 	return fmt.Errorf("Failed to refresh ACLs: %v", err)
-	// }
-
-	// Then restart the service
-	cmd := exec.Command("systemctl", "restart", "smbd")
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("Failed to restart service: %v", err)
+func (s *Server) restart(w http.ResponseWriter, r *http.Request) error {
+	if err := s.Svc.Restart(r.Context()); err != nil {
+		return fmt.Errorf("failed to restart service: %w", err)
 	}
+	ok(w, "Service restarted successfully", "")
+	return nil
+}
 
+func (s *Server) reloadService(w http.ResponseWriter, r *http.Request) error {
+	if err := s.Svc.Reload(r.Context()); err != nil {
+		return fmt.Errorf("failed to reload service: %w", err)
+	}
+	ok(w, "Configuration reloaded", "")
+	return nil
+}
+
+// Info describes the server for the UI.
+type Info struct {
+	Version          string   `json:"version"`
+	Hostname         string   `json:"hostname"`
+	AllowedRoots     []string `json:"allowedRoots"`
+	ServiceBackend   string   `json:"serviceBackend"`
+	UserBackend      string   `json:"userBackend"`
+	ACLSupported     bool     `json:"aclSupported"`
+	FruitSupported   bool     `json:"fruitSupported"`
+	InsecurePassword bool     `json:"insecurePassword"`
+	Username         string   `json:"username"`
+}
+
+func (s *Server) getInfo(w http.ResponseWriter, r *http.Request) error {
+	host, _ := os.Hostname()
+	writeJSON(w, http.StatusOK, Info{
+		Version:          s.Version,
+		Hostname:         host,
+		AllowedRoots:     s.Cfg.Samba.AllowedRoots,
+		ServiceBackend:   s.Svc.Name(),
+		UserBackend:      s.Users.Name(),
+		ACLSupported:     system.HaveCommand("setfacl") && system.HaveCommand("getfacl"),
+		FruitSupported:   system.HasVFSModule("fruit"),
+		InsecurePassword: s.Auth.Insecure,
+		Username:         s.Auth.Username(),
+	})
+	return nil
+}
+
+type adminPasswordRequest struct {
+	Current string `json:"current"`
+	New     string `json:"new"`
+}
+
+func (s *Server) changeAdminPassword(w http.ResponseWriter, r *http.Request) error {
+	var req adminPasswordRequest
+	if err := decode(w, r, &req); err != nil {
+		return err
+	}
+	if err := s.Auth.ChangePassword(req.Current, req.New); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "incorrect") {
+			return forbidden("%s", msg)
+		}
+		return badRequest("%s", msg)
+	}
+	ok(w, "Admin password changed. Please sign in again.", "")
 	return nil
 }

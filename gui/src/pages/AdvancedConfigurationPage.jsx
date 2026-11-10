@@ -10,7 +10,9 @@ import {
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import HistoryIcon from '@mui/icons-material/History';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import BackupsDialog from '../components/Config/BackupsDialog';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConnectionError from '../components/Common/ConnectionError';
 import { getRawConfig, saveRawConfig } from '../services/configService';
@@ -25,6 +27,7 @@ const AdvancedConfigurationPage = () => {
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [backupsOpen, setBackupsOpen] = useState(false);
 
   // Use our custom hook for API data fetching
   const {
@@ -123,6 +126,14 @@ const AdvancedConfigurationPage = () => {
             Refresh
           </Button>
           <Button
+            variant="outlined"
+            startIcon={<HistoryIcon />}
+            onClick={() => setBackupsOpen(true)}
+            disabled={loading || saving}
+          >
+            Backups
+          </Button>
+          <Button
             variant="contained"
             color="primary"
             startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
@@ -164,7 +175,7 @@ const AdvancedConfigurationPage = () => {
         <Typography variant="body2">
           Editing the raw Samba configuration file directly can cause issues if not done correctly.
           It's recommended to use the Settings and Homes interfaces for most configuration tasks.
-          Changes made here will restart the Samba service.
+          The file is validated with Samba's own checker before it is saved, a backup of the previous version is kept, and Samba reloads the new configuration without dropping connections.
         </Typography>
       </Paper>
 
@@ -208,11 +219,13 @@ const AdvancedConfigurationPage = () => {
         </Paper>
       )}
 
+      <BackupsDialog open={backupsOpen} onClose={() => setBackupsOpen(false)} onRestored={handleRefresh} />
+
       <ConfirmDialog
         open={confirmOpen}
         title="Save Configuration"
-        message="Are you sure you want to save changes to the Samba configuration? This will restart the Samba service and could affect active connections."
-        confirmText={saving ? "Saving..." : "Save & Restart"}
+        message="Save changes to the Samba configuration? It is validated first, the previous version is backed up, and Samba reloads it."
+        confirmText={saving ? "Saving..." : "Save"}
         confirmColor="warning"
         onConfirm={handleSave}
         onCancel={() => !saving && setConfirmOpen(false)}

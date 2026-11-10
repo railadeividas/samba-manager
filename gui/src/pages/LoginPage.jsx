@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Box,
+  // eslint-disable-next-line no-unused-vars
   Card,
   CardContent,
   TextField,
@@ -32,6 +33,7 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { mode } = useTheme();
+  // eslint-disable-next-line no-unused-vars
   const muiTheme = useMuiTheme();
 
   const handleChange = (e) => {

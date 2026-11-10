@@ -1,0 +1,7 @@
+# build output
+/samba-manager
+/dist/
+*.test
+
+# local data
+*.local.yaml

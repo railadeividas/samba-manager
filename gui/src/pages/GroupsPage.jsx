@@ -99,6 +99,7 @@ const GroupsPage = () => {
     if (location.state?.action === 'add') {
       handleAddGroup();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
   const handleAddGroup = useCallback(() => {

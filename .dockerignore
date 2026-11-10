@@ -1,0 +1,6 @@
+.git
+.github
+gui/node_modules
+gui/build
+samba-manager
+docs

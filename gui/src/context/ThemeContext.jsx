@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo } from 'react';
 import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
@@ -72,6 +72,37 @@ export const ThemeProvider = ({ children }) => {
               }),
         },
         components: {
+          // Compact controls and dialogs so more fits on screen
+          MuiTextField: { defaultProps: { size: 'small', margin: 'dense' } },
+          MuiFormControl: { defaultProps: { size: 'small' } },
+          MuiAutocomplete: { defaultProps: { size: 'small' } },
+          MuiSelect: { defaultProps: { size: 'small' } },
+          MuiFormHelperText: {
+            styleOverrides: {
+              root: { fontSize: '0.7rem', lineHeight: 1.25, marginTop: 2, marginLeft: 4, marginRight: 4 },
+            },
+          },
+          MuiFormControlLabel: {
+            styleOverrides: { label: { fontSize: '0.9rem' } },
+          },
+          MuiDialog: {
+            styleOverrides: {
+              paper: { margin: 16, maxHeight: 'calc(100% - 32px)' },
+            },
+          },
+          MuiDialogTitle: {
+            styleOverrides: {
+              root: { padding: '10px 20px', fontSize: '1.1rem', lineHeight: 1.4 },
+            },
+          },
+          MuiDialogContent: {
+            styleOverrides: {
+              root: { padding: '8px 20px', '.MuiDialogTitle-root + &': { paddingTop: 10 } },
+            },
+          },
+          MuiDialogActions: {
+            styleOverrides: { root: { padding: '8px 20px' } },
+          },
           MuiAppBar: {
             styleOverrides: {
               root: {
