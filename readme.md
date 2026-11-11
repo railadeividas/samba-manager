@@ -184,7 +184,11 @@ gui/                React UI
 scripts/e2e.sh      end-to-end test
 ```
 
-Releases: push a tag `vX.Y.Z`; the workflow publishes binaries with checksums and a multi-arch image on GHCR.
+Releases are automatic: every merge to `master` that passes CI is released. The version comes from the commit
+(PR) titles since the last release: `feat:` bumps the minor version, `fix:`/`perf:`/`refactor:` the patch version,
+`feat!:` or a `BREAKING CHANGE:` line the major version; `docs:`, `ci:`, `chore:` and `test:` alone do not release.
+Each release publishes static binaries with checksums on the GitHub releases page and a multi-arch Docker image
+(`ghcr.io/<owner>/samba-manager:<version>`, `:<major.minor>`, `:latest`).
 
 ## Limitations
 
