@@ -7,8 +7,11 @@ COPY gui/package.json gui/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY gui/ ./
 ARG BUILD_DATE
+ARG VERSION=dev
 ENV REACT_APP_BUILD_DATE=${BUILD_DATE} GENERATE_SOURCEMAP=false
-RUN npm run build
+# show the release version in the UI footer
+RUN case "$VERSION" in v[0-9]*) npm pkg set version="${VERSION#v}" ;; esac \
+ && npm run build
 
 # ---- 2. Go binary (UI embedded) ------------------------------------------
 FROM golang:1.23-bookworm AS build
