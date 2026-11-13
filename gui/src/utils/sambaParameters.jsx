@@ -24,8 +24,8 @@ export const parameterDescriptions = {
     examples: ['user', 'domain', 'ads']
   },
   'map to guest': {
-    description: 'Mapping to guest account (never, bad user, bad password)',
-    examples: ['never', 'bad user', 'bad password']
+    description: 'When a login is mapped to the guest account. "Never" refuses unknown users and wrong passwords; "Bad User" maps unknown users to guest; "Bad Password" also maps wrong passwords. Shares with "guest ok" still accept anonymous (no username) connections either way',
+    examples: ['Never', 'Bad User', 'Bad Password']
   },
   'dns proxy': {
     description: 'Whether to host NetBIOS names via DNS',
@@ -404,6 +404,80 @@ export const parameterDescriptions = {
   'admin users': {
     description: 'Users who have admin privileges on this share',
     examples: ['root', '@admin']
+  },
+
+  // Written by the default configuration and the share presets
+  'restrict anonymous': {
+    description: 'What anonymous (not logged in) clients may list. 0: shares and users, 1: shares only, 2: nothing, a login is required to list anything. With 2, smb://server/ shows no shares until you log in, but a guest share can still be opened by its full path',
+    examples: ['0', '1', '2']
+  },
+  'server role': {
+    description: 'How this server takes part in the network. "Standalone server" keeps its own users and passwords, with no domain',
+    examples: ['standalone server', 'member server', 'active directory domain controller']
+  },
+  'disable spoolss': {
+    description: 'Turn off the Windows print spooler service (spoolss). Safe when this server does not share printers',
+    examples: ['yes', 'no']
+  },
+  'unix charset': {
+    description: 'Character set of file names on the server\'s filesystem. Leave at UTF-8 unless the data uses an older encoding',
+    examples: ['UTF-8']
+  },
+  'guest account': {
+    description: 'Unix account that anonymous (guest) connections run as. Guests can only access what this account can access',
+    examples: ['nobody']
+  },
+  'inherit acls': {
+    description: 'New files and folders inherit the POSIX ACL of their parent directory. Used by the POSIX ACL access mode so every file keeps the share\'s access entries',
+    examples: ['yes', 'no']
+  },
+  'durable handles': {
+    description: 'Let clients reconnect to open files after a short network drop. Needed for Time Machine backups; requires "kernel oplocks", "kernel share modes" and "posix locking" to be off',
+    examples: ['yes', 'no']
+  },
+  'kernel oplocks': {
+    description: 'Use the Linux kernel for opportunistic locks. Turn off for Time Machine and other shares that use durable handles',
+    examples: ['yes', 'no']
+  },
+  'kernel share modes': {
+    description: 'Let the kernel enforce Windows share modes. Turn off for Time Machine and other shares that use durable handles',
+    examples: ['yes', 'no']
+  },
+  'posix locking': {
+    description: 'Map SMB byte-range locks to Unix locks. Turn off for Time Machine and other shares that use durable handles',
+    examples: ['yes', 'no']
+  },
+  'fruit:time machine': {
+    description: 'Advertise this share to Macs as a Time Machine backup destination (needs the fruit VFS module)',
+    examples: ['yes', 'no']
+  },
+  'fruit:metadata': {
+    description: 'Where macOS metadata (Finder info, resource forks) is stored. "stream" keeps it in the file\'s extended attributes, "netatalk" in separate files',
+    examples: ['stream', 'netatalk']
+  },
+  'fruit:model': {
+    description: 'Mac model whose icon Finder shows for this server',
+    examples: ['MacSamba', 'MacPro', 'Xserve']
+  },
+  'fruit:posix_rename': {
+    description: 'Allow POSIX rename semantics for macOS clients (replacing open files)',
+    examples: ['yes', 'no']
+  },
+  'fruit:veto_appledouble': {
+    description: 'Hide the "._" AppleDouble files macOS creates. "no" shows them, which is needed when metadata is stored as separate files',
+    examples: ['yes', 'no']
+  },
+  'fruit:nfs_aces': {
+    description: 'Let macOS clients read and write NFS-style permission entries. Off avoids surprising permission changes',
+    examples: ['yes', 'no']
+  },
+  'fruit:wipe_intentionally_left_blank_rfork': {
+    description: 'Remove empty resource forks that macOS writes, to avoid cluttering files',
+    examples: ['yes', 'no']
+  },
+  'fruit:delete_empty_adfiles': {
+    description: 'Delete AppleDouble files that hold no data when the file is deleted or changed',
+    examples: ['yes', 'no']
   }
 };
 
@@ -413,7 +487,12 @@ export const globalParameters = [
   'server string',
   'netbios name',
   'security',
+  'server role',
   'map to guest',
+  'restrict anonymous',
+  'guest account',
+  'disable spoolss',
+  'unix charset',
   'dns proxy',
   'log file',
   'max log size',
@@ -455,7 +534,15 @@ export const globalParameters = [
   'max connections',
   'unix password sync',
   'pam password change',
-  'username map'
+  'username map',
+  'vfs objects',
+  'fruit:metadata',
+  'fruit:model',
+  'fruit:posix_rename',
+  'fruit:veto_appledouble',
+  'fruit:nfs_aces',
+  'fruit:wipe_intentionally_left_blank_rfork',
+  'fruit:delete_empty_adfiles'
 ];
 
 // Homes section parameters (applicable to the [homes] section)
@@ -632,7 +719,14 @@ export const getParametersBySection = (sectionName) => {
           'hosts allow',
           'hosts deny',
           'force user',
-          'force group'
+          'force group',
+          'inherit acls',
+          'vfs objects',
+          'fruit:time machine',
+          'durable handles',
+          'kernel oplocks',
+          'kernel share modes',
+          'posix locking'
         ])
       ];
   }
