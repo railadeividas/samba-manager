@@ -19,6 +19,10 @@ import LinearProgress from '@mui/material/LinearProgress';
 import { deleteUser, createUserHomeDirectory } from '../../services/usersService';
 import { useNotification } from '../../context/NotificationContext';
 import ConfirmDialog from '../Common/ConfirmDialog';
+import HomeConflictDialog from './HomeConflictDialog';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import DialogContentText from '@mui/material/DialogContentText';
 
 const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
   const { showNotification } = useNotification();
@@ -28,6 +32,8 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
   const [userToCreateHomeDir, setUserToCreateHomeDir] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [creatingHomeDir, setCreatingHomeDir] = useState(false);
+  const [deleteHome, setDeleteHome] = useState(false);
+  const [homeConflict, setHomeConflict] = useState(null);
 
   const handleChangePasswordClick = (username) => {
     onChangePassword(username);
@@ -35,6 +41,7 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
 
   const handleDeleteClick = (username) => {
     setUserToDelete(username);
+    setDeleteHome(false);
     setConfirmDelete(true);
   };
 
@@ -43,24 +50,34 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
     setConfirmHomeDir(true);
   };
 
-  const handleConfirmCreateHomeDirectory = async () => {
+  const handleConfirmCreateHomeDirectory = async (existingHome = '') => {
     if (!userToCreateHomeDir) return;
 
     setCreatingHomeDir(true);
     try {
-      await createUserHomeDirectory(userToCreateHomeDir);
-      showNotification(`Home directory created for user "${userToCreateHomeDir}"`, 'success');
-      onRefresh();
-    } catch (error) {
-      showNotification(`Failed to create home directory: ${error.message}`, 'error');
-    } finally {
+      await createUserHomeDirectory(userToCreateHomeDir, existingHome);
+      showNotification(`Home directory ready for user "${userToCreateHomeDir}"`, 'success');
+      setHomeConflict(null);
       setConfirmHomeDir(false);
       setUserToCreateHomeDir(null);
+      onRefresh();
+    } catch (error) {
+      if (error.data?.code === 'home_conflict') {
+        setConfirmHomeDir(false);
+        setHomeConflict(error.data.data);
+      } else {
+        setHomeConflict(null);
+        setConfirmHomeDir(false);
+        setUserToCreateHomeDir(null);
+        showNotification(`Failed to create home directory: ${error.message}`, 'error');
+      }
+    } finally {
       setCreatingHomeDir(false);
     }
   };
 
   const handleCancelCreateHomeDirectory = () => {
+    setHomeConflict(null);
     setConfirmHomeDir(false);
     setUserToCreateHomeDir(null);
   };
@@ -70,7 +87,7 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
 
     setDeleting(true);
     try {
-      await deleteUser(userToDelete);
+      await deleteUser(userToDelete, deleteHome);
       showNotification(`User "${userToDelete}" deleted successfully`, 'success');
       setConfirmDelete(false);
       setUserToDelete(null);
@@ -169,7 +186,23 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
       <ConfirmDialog
         open={confirmDelete}
         title="Delete User"
-        message={`Are you sure you want to delete the user "${userToDelete}"? This action cannot be undone.`}
+        message={
+          <>
+            <DialogContentText>
+              Are you sure you want to delete the user "{userToDelete}"? This action cannot be undone.
+            </DialogContentText>
+            <FormControlLabel
+              sx={{ mt: 1 }}
+              control={<Checkbox checked={deleteHome} onChange={(e) => setDeleteHome(e.target.checked)} color="error" />}
+              label="Also delete the home directory and its files"
+            />
+            {!deleteHome && (
+              <DialogContentText variant="caption" component="div">
+                Otherwise the home directory is kept on disk.
+              </DialogContentText>
+            )}
+          </>
+        }
         confirmText="Delete"
         confirmColor="error"
         onConfirm={handleConfirmDelete}
@@ -182,9 +215,18 @@ const UserList = ({ users, onChangePassword, onRefresh, loading }) => {
         message={`Are you sure you want to create a home directory for user "${userToCreateHomeDir}"?`}
         confirmText="Create"
         confirmColor="secondary"
-        onConfirm={handleConfirmCreateHomeDirectory}
+        onConfirm={() => handleConfirmCreateHomeDirectory()}
         onCancel={handleCancelCreateHomeDirectory}
         disableConfirm={creatingHomeDir}
+      />
+
+      <HomeConflictDialog
+        open={Boolean(homeConflict)}
+        username={userToCreateHomeDir}
+        home={homeConflict}
+        busy={creatingHomeDir}
+        onChoose={(choice) => handleConfirmCreateHomeDirectory(choice)}
+        onCancel={handleCancelCreateHomeDirectory}
       />
     </>
   );

@@ -84,6 +84,7 @@ func (f *fakeRunner) ran(prefix string) bool {
 type fakeUsers struct {
 	passwd, group string
 	nextID        int
+	home          string // base directory for home directories
 }
 
 func (u *fakeUsers) Name() string { return "fake" }
@@ -102,10 +103,10 @@ func (u *fakeUsers) AddUser(_ context.Context, name string) error {
 	if err := u.append(u.group, name+":x:"+id+":"); err != nil {
 		return err
 	}
-	return u.append(u.passwd, name+":x:"+id+":"+id+"::/home/"+name+":/usr/sbin/nologin")
+	return u.append(u.passwd, name+":x:"+id+":"+id+"::"+filepath.Join(u.home, name)+":/usr/sbin/nologin")
 }
 func (u *fakeUsers) AddUserWithID(ctx context.Context, name string, uid, gid int) error {
-	return u.append(u.passwd, fmt.Sprintf("%s:x:%d:%d::/home/%s:/usr/sbin/nologin", name, uid, gid, name))
+	return u.append(u.passwd, fmt.Sprintf("%s:x:%d:%d::%s:/usr/sbin/nologin", name, uid, gid, filepath.Join(u.home, name)))
 }
 func (u *fakeUsers) DelUser(_ context.Context, name string) error {
 	return filterLines(u.passwd, func(l string) bool { return !strings.HasPrefix(l, name+":") })
@@ -156,6 +157,7 @@ type env struct {
 	svc   *fakeSvc
 	root  string
 	users *fakeUsers
+	owner map[string]int // fake file owners (chown needs root)
 }
 
 func newEnv(t *testing.T) *env {
@@ -181,13 +183,18 @@ func newEnv(t *testing.T) *env {
 	svc := &fakeSvc{}
 	st, _ := state.Open(filepath.Join(dir, "state"))
 	a, _, _ := auth.New(auth.Options{Username: "admin", Password: "test-password"})
-	u := &fakeUsers{passwd: system.PasswdFile, group: system.GroupFile, nextID: 1000}
+	u := &fakeUsers{passwd: system.PasswdFile, group: system.GroupFile, nextID: 1000, home: filepath.Join(root, "home")}
+	owner := map[string]int{}
+	oldChown, oldOwner := lchown, fileOwner
+	lchown = func(p string, uid, gid int) error { owner[p] = uid; return nil }
+	fileOwner = func(p string, _ os.FileInfo) (int, bool) { return owner[p], true }
+	t.Cleanup(func() { lchown, fileOwner = oldChown, oldOwner })
 
 	s := &Server{
 		Cfg: cfg, Store: &smbconf.Store{Path: smb, BackupDir: filepath.Join(dir, "backups")},
 		Svc: svc, Users: u, State: st, Auth: a, Run: run, Version: "test",
 	}
-	return &env{t: t, srv: s, h: s.Handler(), run: run, svc: svc, root: root, users: u}
+	return &env{t: t, srv: s, h: s.Handler(), run: run, svc: svc, root: root, users: u, owner: owner}
 }
 
 func (e *env) do(method, path string, body any) (int, map[string]any) {
@@ -586,5 +593,180 @@ func TestHumanSize(t *testing.T) {
 		if got := humanSize(in); got != want {
 			t.Errorf("humanSize(%d) = %s, want %s", in, got, want)
 		}
+	}
+}
+
+func (e *env) createUser(name string, extra map[string]any) (int, map[string]any) {
+	body := map[string]any{"password": "correct horse"}
+	for k, v := range extra {
+		body[k] = v
+	}
+	return e.do("POST", "/users/"+name, body)
+}
+
+func (e *env) homeOf(name string) string { return filepath.Join(e.root, "home", name) }
+
+func TestCreateUserAlwaysCreatesHome(t *testing.T) {
+	e := newEnv(t)
+	if code, body := e.createUser("alice", nil); code != 200 {
+		t.Fatalf("%d %v", code, body)
+	}
+	fi, err := os.Stat(e.homeOf("alice"))
+	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("home not created with 0700: %v %v", fi, err)
+	}
+	if got := e.owner[e.homeOf("alice")]; got != 1001 {
+		t.Errorf("home owner = %d, want the new user's uid", got)
+	}
+}
+
+func TestLeftoverHomeNeedsAChoice(t *testing.T) {
+	e := newEnv(t)
+	home := e.homeOf("alice")
+	os.MkdirAll(home, 0o700)
+	os.WriteFile(filepath.Join(home, "old.txt"), []byte("data"), 0o600)
+	e.owner[home] = 4242
+
+	code, body := e.createUser("alice", nil)
+	if code != 409 || body["code"] != "home_conflict" {
+		t.Fatalf("want 409 home_conflict, got %d %v", code, body)
+	}
+	data := body["data"].(map[string]any)
+	if data["path"] != home || data["ownerUid"] != float64(4242) || data["entries"] != float64(1) {
+		t.Errorf("conflict details: %v", data)
+	}
+	// the refusal must leave nothing behind
+	if _, err := system.LookupUser("alice"); err == nil {
+		t.Error("system user must be rolled back")
+	}
+	if !e.run.ran("pdbedit -x -u alice") {
+		t.Error("samba user must be rolled back")
+	}
+	if _, err := os.Stat(filepath.Join(home, "old.txt")); err != nil {
+		t.Error("the old files must not be touched")
+	}
+
+	// adopt keeps the files and hands them over
+	e.run.calls = nil
+	code, body = e.createUser("alice", map[string]any{"existingHome": "adopt"})
+	if code != 200 {
+		t.Fatalf("adopt: %d %v", code, body)
+	}
+	if _, err := os.Stat(filepath.Join(home, "old.txt")); err != nil {
+		t.Error("adopt must keep the files")
+	}
+	acct, _ := system.LookupUser("alice")
+	if e.owner[home] != acct.UID || e.owner[filepath.Join(home, "old.txt")] != acct.UID {
+		t.Errorf("adopt must chown everything: %v", e.owner)
+	}
+}
+
+func TestWipeReplacesTheOldHome(t *testing.T) {
+	e := newEnv(t)
+	home := e.homeOf("alice")
+	os.MkdirAll(home, 0o700)
+	os.WriteFile(filepath.Join(home, "old.txt"), []byte("data"), 0o600)
+	e.owner[home] = 4242
+
+	if code, body := e.createUser("alice", map[string]any{"existingHome": "wipe"}); code != 200 {
+		t.Fatalf("%d %v", code, body)
+	}
+	if _, err := os.Stat(filepath.Join(home, "old.txt")); !os.IsNotExist(err) {
+		t.Error("wipe must delete the old files")
+	}
+	if fi, err := os.Stat(home); err != nil || !fi.IsDir() {
+		t.Error("wipe must leave an empty home")
+	}
+}
+
+func TestHomeRefusals(t *testing.T) {
+	e := newEnv(t)
+	// symlink instead of a directory
+	target := t.TempDir()
+	os.MkdirAll(filepath.Dir(e.homeOf("eve")), 0o755)
+	os.Symlink(target, e.homeOf("eve"))
+	if code, _ := e.createUser("eve", map[string]any{"existingHome": "wipe"}); code != 400 {
+		t.Errorf("symlinked home = %d, want 400", code)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Error("the symlink target must survive")
+	}
+	// home that a share uses
+	e.users.AddUser(context.Background(), "tmp")
+	home := e.homeOf("bob")
+	os.MkdirAll(home, 0o700)
+	e.owner[home] = 4242
+	e.do("POST", "/shares/bobshare", map[string]any{"path": home, "_access": "samba"})
+	if code, _ := e.createUser("bob", map[string]any{"existingHome": "wipe"}); code != 400 {
+		t.Errorf("wipe of a share directory = %d, want 400", code)
+	}
+	// bad mode
+	if code, _ := e.createUser("zed", map[string]any{"existingHome": "nuke"}); code != 400 {
+		t.Errorf("bad existingHome = %d, want 400", code)
+	}
+}
+
+func TestDeleteUserKeepsOrRemovesHome(t *testing.T) {
+	e := newEnv(t)
+	e.createUser("alice", nil)
+	e.createUser("bob", nil)
+
+	code, body := e.do("DELETE", "/users/alice", nil)
+	if code != 200 || !strings.Contains(body["warning"].(string), "was kept") {
+		t.Fatalf("delete should say the home was kept: %d %v", code, body)
+	}
+	if _, err := os.Stat(e.homeOf("alice")); err != nil {
+		t.Error("home must be kept by default")
+	}
+
+	code, body = e.do("DELETE", "/users/bob?deleteHome=true", nil)
+	if code != 200 {
+		t.Fatalf("%d %v", code, body)
+	}
+	if _, err := os.Stat(e.homeOf("bob")); !os.IsNotExist(err) {
+		t.Error("deleteHome must remove the home")
+	}
+}
+
+func TestDeleteHomeOnlyForManagedAccounts(t *testing.T) {
+	e := newEnv(t)
+	e.users.AddUser(context.Background(), "carol") // exists on the host, not created by the manager
+	home := e.homeOf("carol")
+	os.MkdirAll(home, 0o700)
+	acct, _ := system.LookupUser("carol")
+	e.owner[home] = acct.UID
+	e.srv.State.RecordUser(state.UserRec{Name: "carol", UID: acct.UID, GID: acct.GID})
+	e.run.samba = append(e.run.samba, "carol")
+
+	if code, _ := e.do("DELETE", "/users/carol?deleteHome=true", nil); code != 200 {
+		t.Fatal("delete should succeed")
+	}
+	if _, err := os.Stat(home); err != nil {
+		t.Error("the home of an account the manager did not create must be kept")
+	}
+}
+
+func TestRecreatedUserGetsItsIDsBack(t *testing.T) {
+	e := newEnv(t)
+	e.createUser("alice", nil)
+	old, _ := system.LookupUser("alice")
+	e.do("DELETE", "/users/alice", nil)
+	// someone else is created in between and would take the next free id
+	e.createUser("bob", nil)
+
+	code, body := e.createUser("alice", nil)
+	if code != 200 {
+		t.Fatalf("%d %v", code, body)
+	}
+	again, err := system.LookupUser("alice")
+	if err != nil || again.UID != old.UID || again.GID != old.GID {
+		t.Fatalf("ids not restored: %+v vs %+v (%v)", again, old, err)
+	}
+	if !strings.Contains(body["warning"].(string), "Restored UID") {
+		t.Errorf("expected the restore notice: %v", body)
+	}
+	// the old home is owned by the same uid, so it is simply reused
+	if !strings.Contains(body["warning"].(string), "already owned") {
+		t.Errorf("expected the reuse notice: %v", body)
 	}
 }

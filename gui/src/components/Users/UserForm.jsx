@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -6,16 +6,15 @@ import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Grid from '@mui/material/Grid';
-import Checkbox from '@mui/material/Checkbox';
-import FormControlLabel from '@mui/material/FormControlLabel';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { createUser } from '../../services/usersService';
-import { createUserHomeDirectory } from '../../services/usersService';
+import HomeConflictDialog from './HomeConflictDialog';
 import { useNotification } from '../../context/NotificationContext';
 
 const UserForm = ({ open, onSubmit, onClose }) => {
   const { showNotification } = useNotification();
+  const [homeConflict, setHomeConflict] = useState(null);
 
   // Create validation schema
   const validationSchema = Yup.object({
@@ -30,8 +29,25 @@ const UserForm = ({ open, onSubmit, onClose }) => {
     confirmPassword: Yup.string()
       .required('Please confirm your password')
       .oneOf([Yup.ref('password'), null], 'Passwords must match'),
-    createHomeDirectory: Yup.boolean()
   });
+
+  // Creates the user (and its home directory). When a leftover home belongs to
+  // someone else the server answers with a conflict and we ask what to do.
+  const submitUser = async (values, existingHome = '') => {
+    try {
+      await createUser(values.username, values.password, existingHome);
+      setHomeConflict(null);
+      showNotification(`User "${values.username}" created successfully`, 'success');
+      onSubmit();
+    } catch (error) {
+      if (error.data?.code === 'home_conflict') {
+        setHomeConflict({ values, home: error.data.data });
+      } else {
+        setHomeConflict(null);
+        showNotification(`Failed to create user: ${error.message}`, 'error');
+      }
+    }
+  };
 
   // Initialize form with default values
   const formik = useFormik({
@@ -39,25 +55,9 @@ const UserForm = ({ open, onSubmit, onClose }) => {
       username: '',
       password: '',
       confirmPassword: '',
-      createHomeDirectory: false
     },
     validationSchema,
-    onSubmit: async (values) => {
-      try {
-        // Create user
-        await createUser(values.username, values.password);
-
-        // Optionally create home directory
-        if (values.createHomeDirectory) {
-          await createUserHomeDirectory(values.username);
-        }
-
-        showNotification(`User "${values.username}" created successfully`, 'success');
-        onSubmit();
-      } catch (error) {
-        showNotification(`Failed to create user: ${error.message}`, 'error');
-      }
-    },
+    onSubmit: (values) => submitUser(values),
   });
 
   return (
@@ -126,20 +126,6 @@ const UserForm = ({ open, onSubmit, onClose }) => {
               />
             </Grid>
 
-            {/* Create Home Directory checkbox */}
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    id="createHomeDirectory"
-                    name="createHomeDirectory"
-                    checked={formik.values.createHomeDirectory}
-                    onChange={formik.handleChange}
-                  />
-                }
-                label="Create Home Directory"
-              />
-            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
@@ -154,6 +140,14 @@ const UserForm = ({ open, onSubmit, onClose }) => {
           </Button>
         </DialogActions>
       </form>
+      <HomeConflictDialog
+        open={Boolean(homeConflict)}
+        username={homeConflict?.values.username}
+        home={homeConflict?.home}
+        busy={formik.isSubmitting}
+        onChoose={(choice) => submitUser(homeConflict.values, choice)}
+        onCancel={() => setHomeConflict(null)}
+      />
     </Dialog>
   );
 };

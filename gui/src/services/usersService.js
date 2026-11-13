@@ -17,11 +17,12 @@ export const getUsers = async () => {
  * Create a new user
  * @param {string} username - Username
  * @param {string} password - Password
+ * @param {string} existingHome - "adopt" or "wipe" when a leftover home directory exists
  * @returns {Promise<Object>} - Response
  */
-export const createUser = async (username, password) => {
+export const createUser = async (username, password, existingHome = '') => {
   try {
-    const response = await api.post(`/users/${username}`, { password });
+    const response = await api.post(`/users/${username}`, { password, existingHome });
     return response.data;
   } catch (error) {
     throw error;
@@ -31,11 +32,12 @@ export const createUser = async (username, password) => {
 /**
  * Delete a user
  * @param {string} username - Username
+ * @param {boolean} deleteHome - Also delete the user's home directory
  * @returns {Promise<Object>} - Response
  */
-export const deleteUser = async (username) => {
+export const deleteUser = async (username, deleteHome = false) => {
   try {
-    const response = await api.delete(`/users/${username}`);
+    const response = await api.delete(`/users/${username}${deleteHome ? '?deleteHome=true' : ''}`);
     return response.data;
   } catch (error) {
     throw error;
@@ -62,9 +64,9 @@ export const changePassword = async (username, password) => {
  * @param {string} username - Username
  * @returns {Promise<Object>} - Response
  */
-export const createUserHomeDirectory = async (username) => {
+export const createUserHomeDirectory = async (username, existingHome = '') => {
   try {
-    const response = await api.post(`/users/${username}/home`);
+    const response = await api.post(`/users/${username}/home`, { existingHome });
     return response.data;
   } catch (error) {
     throw error;
