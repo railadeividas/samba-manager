@@ -34,27 +34,36 @@ type APIResponse struct {
 	Message string `json:"message,omitempty"`
 	Warning string `json:"warning,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Code and Data let the UI react to specific errors (for example a
+	// leftover home directory) without parsing the message.
+	Code string `json:"code,omitempty"`
+	Data any    `json:"data,omitempty"`
 }
 
 // httpError is an error that knows its HTTP status.
 type httpError struct {
 	code int
 	msg  string
+	kind string
+	data any
 }
 
 func (e *httpError) Error() string { return e.msg }
 
 func badRequest(format string, a ...any) error {
-	return &httpError{http.StatusBadRequest, fmt.Sprintf(format, a...)}
+	return &httpError{code: http.StatusBadRequest, msg: fmt.Sprintf(format, a...)}
+}
+func conflictWith(kind string, data any, format string, a ...any) error {
+	return &httpError{http.StatusConflict, fmt.Sprintf(format, a...), kind, data}
 }
 func notFound(format string, a ...any) error {
-	return &httpError{http.StatusNotFound, fmt.Sprintf(format, a...)}
+	return &httpError{code: http.StatusNotFound, msg: fmt.Sprintf(format, a...)}
 }
 func conflict(format string, a ...any) error {
-	return &httpError{http.StatusConflict, fmt.Sprintf(format, a...)}
+	return &httpError{code: http.StatusConflict, msg: fmt.Sprintf(format, a...)}
 }
 func forbidden(format string, a ...any) error {
-	return &httpError{http.StatusForbidden, fmt.Sprintf(format, a...)}
+	return &httpError{code: http.StatusForbidden, msg: fmt.Sprintf(format, a...)}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -73,7 +82,7 @@ func fail(w http.ResponseWriter, err error) {
 	var ve *smbconf.ValidationError
 	switch {
 	case errors.As(err, &he):
-		writeError(w, he.msg, he.code)
+		writeJSON(w, he.code, APIResponse{Error: he.msg, Code: he.kind, Data: he.data})
 	case errors.As(err, &ve):
 		writeError(w, ve.Error(), http.StatusBadRequest)
 	default:

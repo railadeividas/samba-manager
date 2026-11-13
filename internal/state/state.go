@@ -37,7 +37,12 @@ type GroupRec struct {
 type data struct {
 	Users  []UserRec  `json:"users"`
 	Groups []GroupRec `json:"groups"`
+	// Removed remembers the ids of deleted users so that creating the same
+	// name again gets the same UID back and keeps owning its old files.
+	Removed []UserRec `json:"removed,omitempty"`
 }
+
+const maxRemoved = 200
 
 // State is persisted as JSON in the state directory.
 type State struct {
@@ -115,6 +120,64 @@ func (s *State) ForgetUser(name string) error {
 	defer s.mu.Unlock()
 	s.removeUser(name)
 	return s.save()
+}
+
+// RememberRemoved keeps the ids of a deleted user (newest last, bounded).
+func (s *State) RememberRemoved(u UserRec) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dropRemoved(u.Name)
+	s.d.Removed = append(s.d.Removed, u)
+	if n := len(s.d.Removed); n > maxRemoved {
+		s.d.Removed = append([]UserRec(nil), s.d.Removed[n-maxRemoved:]...)
+	}
+	return s.save()
+}
+
+func (s *State) dropRemoved(name string) {
+	out := s.d.Removed[:0]
+	for _, u := range s.d.Removed {
+		if u.Name != name {
+			out = append(out, u)
+		}
+	}
+	s.d.Removed = out
+}
+
+// ForgetRemoved drops the remembered ids of a user name.
+func (s *State) ForgetRemoved(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	before := len(s.d.Removed)
+	s.dropRemoved(name)
+	if len(s.d.Removed) == before {
+		return nil
+	}
+	return s.save()
+}
+
+// RemovedUser returns the remembered ids of a deleted user name.
+func (s *State) RemovedUser(name string) (UserRec, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, u := range s.d.Removed {
+		if u.Name == name {
+			return u, true
+		}
+	}
+	return UserRec{}, false
+}
+
+// RemovedByUID returns the name of a deleted user that used uid.
+func (s *State) RemovedByUID(uid int) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, u := range s.d.Removed {
+		if u.UID == uid {
+			return u.Name, true
+		}
+	}
+	return "", false
 }
 
 // RecordGroup stores a group.

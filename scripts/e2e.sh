@@ -88,6 +88,23 @@ check "old admin password still works" "alice" "$(api GET /users)"
 check "alice logs in with her old password" "a.txt" "$(smb team 'alice%alice-pass-1' 'ls')"
 check "users kept their ids" "uid=1000(alice)" "$(dc exec -T samba-manager id alice)"
 
+echo "== home directories"
+check "new user gets a home owned by them" "dora dora" "$(api POST /users/dora '{"password":"dora-pass-123"}' >/dev/null; dc exec -T samba-manager ls -ld /home/dora)"
+dc exec -T samba-manager sh -c 'echo secret > /home/dora/keep.txt && chown dora:dora /home/dora/keep.txt'
+DORA_UID=$(dc exec -T samba-manager id -u dora | tr -d '\r')
+check "deleting keeps the home and says so" "was kept" "$(api DELETE /users/dora)"
+check "re-creating works and keeps the home" "[200]" "$(api POST /users/dora '{"password":"dora-pass-123"}')"
+check "re-created user has the same uid" "$DORA_UID" "$(dc exec -T samba-manager id -u dora)"
+check "the old files belong to the user again" "dora dora" "$(dc exec -T samba-manager ls -l /home/dora/keep.txt)"
+api DELETE /users/dora >/dev/null
+dc exec -T samba-manager chown -R 4242:4242 /home/dora
+check "leftover foreign home needs a choice" "home_conflict" "$(api POST /users/dora '{"password":"dora-pass-123"}')"
+check "refusal leaves no system user behind" "no such user" "$(dc exec -T samba-manager id dora 2>&1)"
+check "adopt keeps the files" "[200]" "$(api POST /users/dora '{"password":"dora-pass-123","existingHome":"adopt"}')"
+check "adopted files belong to the user" "dora dora" "$(dc exec -T samba-manager ls -l /home/dora/keep.txt)"
+check "delete with home removes it" "[200]" "$(api DELETE '/users/dora?deleteHome=true')"
+check "home is gone" "No such file" "$(dc exec -T samba-manager ls /home/dora 2>&1)"
+
 echo
 echo "passed: $pass   failed: $fail"
 [[ $fail -eq 0 ]]
