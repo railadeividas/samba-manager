@@ -57,6 +57,7 @@ check "bad user name is rejected" "[400]" "$(api POST /users/-rf '{"password":"w
 check "short password is rejected" "[400]" "$(api POST /users/carol '{"password":"short"}')"
 check "create Samba-only share" "[200]" "$(api POST /shares/team '{"path":"/srv/samba/team","valid users":"alice, bob","write list":"alice","force user":"alice","_access":"samba"}')"
 check "create POSIX ACL share" "[200]" "$(api POST /shares/acl '{"path":"/srv/samba/acl","valid users":"alice, bob","write list":"alice","_access":"acl"}')"
+check "create guest share" "[200]" "$(api POST /shares/pub '{"path":"/srv/samba/pub","guest ok":"yes","read only":"no"}')"
 check "share outside allowed roots is rejected" "[400]" "$(api POST /shares/evil '{"path":"/etc"}')"
 check "config injection is rejected" "[400]" "$(api POST /config/sections/x '{"x":{"a":"b\n[global]"}}')"
 check "ACL entries were written" '"user":"bob","permission":"r-x"' "$(api GET /shares/acl/acl)"
@@ -72,6 +73,8 @@ for share in team acl; do
   check "$share: wrong password is refused" "NT_STATUS_LOGON_FAILURE" "$(smb $share 'alice%nope' 'ls')"
   check "$share: guests are refused" "NT_STATUS_ACCESS_DENIED" "$(guest $share 'ls')"
 done
+check "pub: guests can upload" "putting file" "$(guest pub 'put /tmp/hello.txt g.txt')"
+check "pub: guests can read" "getting file" "$(guest pub 'get g.txt /tmp/g.txt')"
 check "Samba-only share: files belong to the forced user" "alice alice" "$(dc exec -T samba-manager ls -l /srv/samba/team/a.txt)"
 
 echo "== survives re-creating the container"
