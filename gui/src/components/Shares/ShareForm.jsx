@@ -186,6 +186,7 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
     validationSchema,
     onSubmit: async (values) => {
       try {
+        const guestAccess = values['guest ok'] === 'yes';
         const shareName = values.name.trim();
 
         // Convert selections to comma-separated strings
@@ -195,9 +196,10 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
         // One request does everything: directory, access control and smb.conf.
         const payload = { ...extraParams };
         FORM_PARAMS.forEach((key) => { payload[key] = values[key] ?? ''; });
-        payload['valid users'] = validUsersStr;
+        // Guests are not in any user list, so a list would lock them out
+        payload['valid users'] = guestAccess ? '' : validUsersStr;
         payload['write list'] = writeListStr;
-        payload._access = values._access;
+        payload._access = guestAccess ? 'samba' : values._access;
         payload._owner = values.owner || '';
         payload._group = values.group || '';
         payload._permissions = values.permissions || '';
@@ -534,7 +536,11 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                   <MenuItem value="yes">Yes</MenuItem>
                   <MenuItem value="no">No</MenuItem>
                 </Select>
-                <FormHelperText>Allow guest access without authentication</FormHelperText>
+                <FormHelperText>
+                  {formik.values['guest ok'] === 'yes'
+                    ? 'Anyone can open this share without a password'
+                    : 'Allow guest access without authentication'}
+                </FormHelperText>
               </FormControl>
             </Grid>
 
@@ -557,8 +563,9 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
               <Autocomplete
                 multiple
                 id="validUsers"
+                disabled={formik.values['guest ok'] === 'yes'}
                 options={validUserOptions}
-                value={validUsersSelected}
+                value={formik.values['guest ok'] === 'yes' ? [] : validUsersSelected}
                 onChange={(_, newValue) => {
                   setValidUsersSelected(newValue);
                 }}
@@ -571,7 +578,11 @@ const ShareForm = ({ open, mode, shareData, onSubmit, onClose }) => {
                     {...params}
                     label="Valid Users & Groups"
                     placeholder="Select users and groups"
-                    helperText="Who may open the share (read access)"
+                    helperText={
+                      formik.values['guest ok'] === 'yes'
+                        ? 'Not used while Guest Access is on: everyone may open the share. Use the Write List to limit who can change files'
+                        : 'Who may open the share (read access)'
+                    }
                   />
                 )}
               />

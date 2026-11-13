@@ -770,3 +770,41 @@ func TestRecreatedUserGetsItsIDsBack(t *testing.T) {
 		t.Errorf("expected the reuse notice: %v", body)
 	}
 }
+
+func TestGuestShareDropsValidUsers(t *testing.T) {
+	e := newEnv(t)
+	e.users.append(system.PasswdFile, "nobody:x:65534:65534::/nonexistent:/usr/sbin/nologin")
+	e.users.append(system.GroupFile, "nogroup:x:65534:")
+	e.users.AddUser(context.Background(), "alice")
+	e.run.samba = append(e.run.samba, "alice")
+
+	path := filepath.Join(e.root, "pub")
+	os.MkdirAll(path, 0o755) // an existing directory, so the test needs no chown (root only)
+	code, body := e.do("POST", "/shares/pub", map[string]any{
+		"path": path, "guest ok": "yes", "read only": "yes",
+		"valid users": "alice", "write list": "alice", "_access": "acl",
+	})
+	if code != 200 {
+		t.Fatalf("%d %v", code, body)
+	}
+	conf := e.conf()
+	if strings.Contains(conf, "valid users") {
+		t.Errorf("valid users must not be saved for a guest share:\n%s", conf)
+	}
+	for _, want := range []string{"guest ok = yes", "write list = alice", "force user = nobody", "# samba-manager:access = samba"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("missing %q in:\n%s", want, conf)
+		}
+	}
+	if w, _ := body["warning"].(string); !strings.Contains(w, "Valid Users list was not saved") {
+		t.Errorf("expected a warning about the dropped list: %v", body)
+	}
+
+	// turning guest access off again keeps working with a user list
+	code, body = e.do("POST", "/shares/pub", map[string]any{
+		"path": path, "guest ok": "no", "valid users": "alice", "_access": "samba", "force user": "alice",
+	})
+	if code != 200 || !strings.Contains(e.conf(), "valid users = alice") {
+		t.Errorf("a normal share must keep valid users: %d %v\n%s", code, body, e.conf())
+	}
+}
