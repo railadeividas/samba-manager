@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"samba-manager/internal/smbconf"
 	"samba-manager/internal/system"
@@ -316,10 +317,18 @@ func (s *Server) saveShare(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	guestWarning, err := applyGuestAccess(f, in)
+	if err != nil {
+		return err
+	}
+
 	strategy := strategyFor(in.Access)
 	plan, err := strategy.Prepare(ctx, s, in, prev)
 	if err != nil {
 		return err
+	}
+	if guestWarning != "" {
+		plan.Warnings = append(plan.Warnings, guestWarning)
 	}
 	for k, v := range plan.Params {
 		if valueOf(in.Params, k) == "" {
@@ -371,6 +380,49 @@ func (s *Server) saveShare(w http.ResponseWriter, r *http.Request) error {
 	}
 	ok(w, fmt.Sprintf("Share %s successfully.", verb), warning)
 	return nil
+}
+
+// applyGuestAccess makes "guest ok = yes" work without further setup: guests
+// run as Samba's guest account, so unless a Force User/Group is chosen the
+// share is forced to that account (Samba-only mode) and the directory is
+// handed to it. It returns a warning for an existing directory that is not
+// owned by the guest account and may therefore refuse writes.
+func applyGuestAccess(f *smbconf.File, in *shareInput) (string, error) {
+	if !isYes(valueOf(in.Params, "guest ok")) {
+		return "", nil
+	}
+	in.Access = "samba" // ACLs cannot grant anything to anonymous users
+	if valueOf(in.Params, "force user") != "" || valueOf(in.Params, "force group") != "" {
+		return "", nil
+	}
+	account := "nobody"
+	if g := f.Section("global"); g != nil {
+		if v, ok := g.Get("guest account"); ok && v != "" {
+			account = v
+		}
+	}
+	u, err := system.LookupUser(account)
+	if err != nil {
+		return "", badRequest("guest access needs the guest account %q, which does not exist on this system", account)
+	}
+	in.Params["force user"] = u.Name
+	if g, err := system.LookupGroupByGID(u.GID); err == nil {
+		in.Params["force group"] = g.Name
+	}
+	if info, err := os.Stat(in.Path); err == nil {
+		if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != u.UID && !isYes(valueOf(in.Params, "read only")) {
+			return fmt.Sprintf("Guests are saved as %q, but %s is owned by another account, so guest writes may fail. Set the owner to %q (or make the directory world-writable).", u.Name, in.Path, u.Name), nil
+		}
+	}
+	return "", nil
+}
+
+func isYes(v string) bool {
+	switch strings.ToLower(v) {
+	case "yes", "true", "1", "on":
+		return true
+	}
+	return false
 }
 
 // prepareDirectory creates the share directory if needed and applies

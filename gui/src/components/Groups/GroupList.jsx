@@ -147,6 +147,11 @@ const GroupList = ({ groups, allUsers, onEdit, onRefresh, loading }) => {
                           System Group
                         </Typography>
                       )}
+                      {group.isPrivate && !group.isSystem && (
+                        <Typography variant="caption" color="text.secondary">
+                          Private group (created with the user)
+                        </Typography>
+                      )}
                     </Box>
                   </Box>
                 </TableCell>

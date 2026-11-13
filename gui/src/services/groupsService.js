@@ -7,7 +7,7 @@ import api from './api';
  */
 export const getGroups = async (includeSystem = false) => {
   try {
-    const response = await api.get(`/groups?includeSystem=${includeSystem}`);
+    const response = await api.get(`/groups?includeSystem=${includeSystem}&includePrivate=true`);
     return response.data;
   } catch (error) {
     throw error;
