@@ -40,7 +40,10 @@ func (s *Server) createGroup(w http.ResponseWriter, r *http.Request) error {
 	if err := system.ValidateGroupname(name); err != nil {
 		return badRequest("%v", err)
 	}
-	if _, err := system.LookupGroup(name); err == nil {
+	if g, err := system.LookupGroup(name); err == nil {
+		if g.Private {
+			return conflict("Group %s already exists: it is the private group created with user %s. Use it as is, or pick another name.", name, name)
+		}
 		return conflict("Group %s already exists", name)
 	}
 	if err := s.Users.AddGroup(r.Context(), name); err != nil {
