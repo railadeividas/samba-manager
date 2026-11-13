@@ -317,7 +317,7 @@ func (s *Server) saveShare(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	guestWarning, err := applyGuestAccess(f, in)
+	guestWarnings, err := applyGuestAccess(f, in)
 	if err != nil {
 		return err
 	}
@@ -327,9 +327,7 @@ func (s *Server) saveShare(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if guestWarning != "" {
-		plan.Warnings = append(plan.Warnings, guestWarning)
-	}
+	plan.Warnings = append(plan.Warnings, guestWarnings...)
 	for k, v := range plan.Params {
 		if valueOf(in.Params, k) == "" {
 			in.Params[k] = v
@@ -382,18 +380,30 @@ func (s *Server) saveShare(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// applyGuestAccess makes "guest ok = yes" work without further setup: guests
-// run as Samba's guest account, so unless a Force User/Group is chosen the
-// share is forced to that account (Samba-only mode) and the directory is
-// handed to it. It returns a warning for an existing directory that is not
-// owned by the guest account and may therefore refuse writes.
-func applyGuestAccess(f *smbconf.File, in *shareInput) (string, error) {
+// applyGuestAccess makes "guest ok = yes" work without further setup.
+//   - "valid users" is dropped: it would lock anonymous users out. Who may
+//     change files is still controlled by "write list" and "read only".
+//   - Guests run as Samba's guest account, so unless a Force User/Group is
+//     chosen the share is forced to that account (Samba-only mode) and the
+//     directory is handed to it.
+//
+// It returns warnings for the UI.
+func applyGuestAccess(f *smbconf.File, in *shareInput) ([]string, error) {
 	if !isYes(valueOf(in.Params, "guest ok")) {
-		return "", nil
+		return nil, nil
 	}
+	var warnings []string
 	in.Access = "samba" // ACLs cannot grant anything to anonymous users
+	for k := range in.Params {
+		if smbconf.NormKey(k) == "valid users" {
+			if in.Params[k] != "" {
+				warnings = append(warnings, "Guest access is on, so the Valid Users list was not saved: it would keep guests out. Use the Write List to limit who can change files.")
+			}
+			delete(in.Params, k)
+		}
+	}
 	if valueOf(in.Params, "force user") != "" || valueOf(in.Params, "force group") != "" {
-		return "", nil
+		return warnings, nil
 	}
 	account := "nobody"
 	if g := f.Section("global"); g != nil {
@@ -403,7 +413,7 @@ func applyGuestAccess(f *smbconf.File, in *shareInput) (string, error) {
 	}
 	u, err := system.LookupUser(account)
 	if err != nil {
-		return "", badRequest("guest access needs the guest account %q, which does not exist on this system", account)
+		return nil, badRequest("guest access needs the guest account %q, which does not exist on this system", account)
 	}
 	in.Params["force user"] = u.Name
 	if g, err := system.LookupGroupByGID(u.GID); err == nil {
@@ -411,10 +421,10 @@ func applyGuestAccess(f *smbconf.File, in *shareInput) (string, error) {
 	}
 	if info, err := os.Stat(in.Path); err == nil {
 		if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != u.UID && !isYes(valueOf(in.Params, "read only")) {
-			return fmt.Sprintf("Guests are saved as %q, but %s is owned by another account, so guest writes may fail. Set the owner to %q (or make the directory world-writable).", u.Name, in.Path, u.Name), nil
+			warnings = append(warnings, fmt.Sprintf("Guests are saved as %q, but %s is owned by another account, so guest writes may fail. Set the owner to %q (or make the directory world-writable).", u.Name, in.Path, u.Name))
 		}
 	}
-	return "", nil
+	return warnings, nil
 }
 
 func isYes(v string) bool {
